@@ -1,0 +1,15 @@
+# Credenciais reais — jamais versionar
+secrets.yaml
+
+# Artefatos do ESPHome/PlatformIO
+.esphome/
+*.bin
+*.elf
+
+# Logs e temporários
+*.log
+boot_log.txt
+net_log.txt
+
+# macOS
+.DS_Store

@@ -1,0 +1,639 @@
+# =====================================================================
+#  SISTEMA DE BOMBEAMENTO CISTERNA -> CAIXA D'ÁGUA
+#  ESP32-C3 + ESPHome + Home Assistant
+#
+#  Implementa a FSM do MEMORIAL-DESCRITIVO.md:
+#    E0 Standby | E1 Pré-partida | E2 Recalque Crítico
+#    E3 Recalque Interm./Manual  | E4 Sucesso
+#    E5 Falha Contator (corrente fantasma)
+#    E6 Falha Corrente Alta      | E7 Falha Corrente Baixa
+#    E8 Modo Pausa (soberano)    | E9 Boot Seguro (rotina, não estado salvo)
+#
+#  Toda a lógica de segurança roda 100% LOCAL no ESP32.
+#  Wi-Fi/Home Assistant são apenas telemetria e conveniência.
+# =====================================================================
+
+substitutions:
+  # ------------- PINOS (ESP32-C3) -------------
+  pino_adc_boias: GPIO0   # matriz das 2 boias (2 fios) — ADC1
+  pino_botao: GPIO1       # contato seco do botão da cozinha (via UTP)
+  pino_led_r: GPIO4       # canal 1 do YYNMOS-4
+  pino_led_g: GPIO5       # canal 2 do YYNMOS-4
+  pino_led_b: GPIO6       # canal 3 do YYNMOS-4
+  pino_rele: GPIO7        # canal 4 do YYNMOS-4 -> módulo relé -> contator
+  pino_uart_tx: GPIO21    # -> RX do PZEM-004T
+  pino_uart_rx: GPIO20    # <- TX do PZEM-004T
+
+  # ------------- CALIBRAÇÃO (ajustar na instalação) -------------
+  # Matriz de boias SUPERVISIONADA (laço com resistor de fim de linha):
+  #   - Pull-up de 3.3kΩ do nó ADC para 3.3V (no quadro).
+  #   - Resistor EOL de 10kΩ em paralelo com as boias (NO LADO DA CAIXA!) —
+  #     é ele que torna o cabo rompido detectável.
+  #   - Boias FECHAM contato quando a água está ABAIXO delas.
+  # Tensões resultantes:
+  #   cabo ROMPIDO / sem boia (circuito aberto)  ~3.3V  -> FALHA SENSOR
+  #   ambas abertas (10kΩ)          = CHEIA        ~2.48V
+  #   só máx fechada (4.7k∥10k)     = INTERMEDIÁRIO ~1.62V
+  #   ambas fechadas (1k∥4.7k∥10k)  = CRÍTICO      ~0.62V
+  #   cabo em CURTO                               ~0.0V  -> FALHA SENSOR
+  adc_sem_sensor_acima_de: "2.90"     # Volts — acima disso: rompido/sem boia
+  adc_cheia_acima_de: "2.10"          # Volts
+  adc_intermediario_acima_de: "1.10"  # Volts
+  adc_curto_abaixo_de: "0.35"         # Volts — abaixo disso: cabo em curto
+  sensor_falho_leituras: "15"         # leituras (1s) fora das faixas p/ declarar falha
+
+  # Bomba Intech BSCA2 1/4 HP 220V — calibrar com pinça amperimétrica
+  corrente_maxima: "3.0"   # A — acima disso = rotor preso (E6)
+  corrente_minima: "0.5"   # A — abaixo disso = bomba a seco (E7)
+
+  tempo_pre_partida: 5s    # delay E1 antes de ligar a bomba
+  tempo_verde_sucesso: 60s # duração do LED verde em E4
+  blanking_ms: "5000"      # cegueira de partida do PZEM (ms)
+  tempo_maximo_bomba: 10min # inching: limite contínuo de bomba ligada;
+                            # se estourar (boia máx. quebrada?) -> MODO PAUSA
+
+  corrente_fantasma: "0.5"       # A — corrente com relé DESLIGADO = contator soldado (E5)
+  fantasma_grace_ms: "10000"     # ms de tolerância após desligar (cauda de leitura do PZEM)
+  nivel_leituras_estaveis: "4"   # histerese: leituras consecutivas (1s cada) para
+                                 # aceitar mudança de nível (anti-marola/anti-ruído)
+
+esphome:
+  name: caixa-dagua
+  friendly_name: "Caixa D'Água"
+  # PlatformIO não compila em caminhos com espaço/apóstrofo ("Caixas d'águas")
+  build_path: /Users/willian/.esphome-builds/caixa-dagua
+  on_boot:
+    # E9 — Rotina de Boot Seguro: roda em TODO boot (volta de apagão).
+    # NUNCA religa a bomba direto: sempre reavalia boias + E1 + blanking.
+    priority: -100
+    then:
+      - script.execute: boot_seguro
+
+esp32:
+  board: esp32-c3-devkitm-1
+  framework:
+    type: esp-idf
+
+# Gravação por evento: escreve na NVS imediatamente quando um global
+# restaurável muda (só há mudança em transição de estado -> pouquíssimas
+# gravações/dia, sem desgaste da flash).
+preferences:
+  flash_write_interval: 0s
+
+logger:
+
+api:
+  encryption:
+    key: !secret api_key
+  # NUNCA reiniciar por falta de cliente HA — a lógica é 100% local.
+  # (O padrão do ESPHome é reiniciar após 15 min sem conexão!)
+  reboot_timeout: 0s
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  # NUNCA reiniciar por falta de Wi-Fi — a lógica é 100% local.
+  reboot_timeout: 0s
+  networks:
+    - ssid: !secret wifi_ssid
+      password: !secret wifi_password
+    - ssid: !secret wifi_ssid_2
+      password: !secret wifi_password
+  ap:
+    ssid: "Caixa-Dagua Fallback"
+    password: !secret ap_password
+
+captive_portal:
+
+# =====================================================================
+#  ESTADO PERSISTENTE
+# =====================================================================
+globals:
+  # Estado lógico da FSM — a ÚNICA coisa salva na flash.
+  # (Nunca salvamos o estado do relé físico.)
+  - id: fsm_state
+    type: int
+    restore_value: true
+    initial_value: '0'
+
+  - id: manual_mode
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+
+  # 0=Cheia | 1=Intermediário | 2=Crítico | 3=Desconhecido | 4=FALHA SENSOR
+  - id: water_level
+    type: int
+    restore_value: false
+    initial_value: '3'
+
+  # Contagem de leituras fora das faixas válidas (supervisão do sensor)
+  - id: sensor_falho_contagem
+    type: int
+    restore_value: false
+    initial_value: '0'
+
+  # millis() do momento em que o relé ligou (para o blanking do PZEM)
+  - id: pump_started_at
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
+
+  # millis() do momento em que o relé desligou (tolerância da corrente fantasma)
+  - id: pump_stopped_at
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
+
+  # true = E8 foi ativado pelo inching (automático), não pelo usuário.
+  # Restaurável: após apagão, a pausa automática continua piscando.
+  - id: pausa_automatica
+    type: bool
+    restore_value: true
+    initial_value: 'false'
+
+  # Histerese do nível: candidato e contagem de leituras estáveis
+  - id: nivel_candidato
+    type: int
+    restore_value: false
+    initial_value: '3'
+  - id: nivel_contagem
+    type: int
+    restore_value: false
+    initial_value: '0'
+
+# =====================================================================
+#  NÚCLEO DA FSM
+# =====================================================================
+script:
+  # ---- Transição central de estado (todas as mudanças passam aqui) ----
+  - id: goto_state
+    parameters:
+      novo: int
+    then:
+      - lambda: |-
+          static const char *NOMES[] = {
+            "E0 Standby", "E1 Pre-partida", "E2 Recalque Critico",
+            "E3 Recalque Interm./Manual", "E4 Caixa Cheia (Sucesso)",
+            "E5 FALHA Contator", "E6 FALHA Corrente Alta",
+            "E7 FALHA Corrente Baixa", "E8 Modo Pausa"};
+          ESP_LOGI("fsm", "Transicao -> %s", NOMES[novo]);
+          id(fsm_state) = novo;  // persiste na flash (flash_write_interval: 0s)
+          id(fsm_texto).publish_state(NOMES[novo]);
+
+          // cancela timers de estados anteriores
+          id(pre_partida_timer).stop();
+          id(sucesso_timer).stop();
+
+          if (novo != 1 && novo != 3) id(manual_mode) = false;
+          if (novo != 8) id(pausa_automatica) = false;
+
+          // --- Última Ocorrência: registro do "porquê" para debugging ---
+          if (novo == 5)      id(ocorrencia_texto).publish_state("Contator soldado: corrente com rele DESLIGADO!");
+          else if (novo == 6) id(ocorrencia_texto).publish_state("Rotor preso (sobrecorrente)");
+          else if (novo == 7) id(ocorrencia_texto).publish_state("Bomba a seco (subcorrente)");
+          else if (novo == 8 && id(pausa_automatica))
+            id(ocorrencia_texto).publish_state("Inching: ${tempo_maximo_bomba} sem encher - verificar boia superior");
+
+          // --- Bomba: liga somente em E2/E3; qualquer outro estado desliga ---
+          // O limite de tempo (inching) segue o RELÉ, não o estado: a transição
+          // E2->E3 não reinicia a contagem dos 10 minutos.
+          bool bomba = (novo == 2 || novo == 3);
+          if (bomba && !id(rele_bomba).state) {
+            id(pump_started_at) = millis();  // inicia blanking do PZEM
+            id(rele_bomba).turn_on();
+            id(limite_bomba_timer).execute();
+          } else if (!bomba && id(rele_bomba).state) {
+            id(rele_bomba).turn_off();  // pausa/falha desligam IMEDIATAMENTE
+            id(pump_stopped_at) = millis();  // tolerância da corrente fantasma
+            id(limite_bomba_timer).stop();
+          }
+
+          // --- LED RGB da cozinha (fades suaves / efeitos de alarme) ---
+          const char *efeito = nullptr;
+          if (novo == 5)      efeito = "Falha Branco";
+          else if (novo == 6) efeito = "Falha Vermelho";
+          else if (novo == 7) efeito = "Falha Azul";
+          else if (novo == 8 && id(pausa_automatica)) efeito = "Pausa Piscando";
+
+          if (novo == 0) {
+            auto c = id(led_cozinha).turn_off();
+            c.set_effect("None");
+            c.set_transition_length(800);
+            c.perform();
+          } else if (efeito != nullptr) {
+            auto c = id(led_cozinha).turn_on();
+            c.set_brightness(1.0);
+            c.set_effect(efeito);
+            c.perform();
+          } else {
+            float r = 0, g = 0, b = 0;
+            switch (novo) {
+              case 1: r = 1;        break;  // Vermelho: caixa vazia, aguardando
+              case 2: r = 1; b = 1; break;  // Roxo/Pink: enchendo crítico
+              case 3: b = 1;        break;  // Azul: intermediário/manual
+              case 4: g = 1;        break;  // Verde: sucesso
+              case 8: r = 1; g = 1; break;  // Amarelo sólido: Pausa MANUAL
+            }
+            auto c = id(led_cozinha).turn_on();
+            c.set_effect("None");
+            c.set_brightness(1.0);
+            c.set_rgb(r, g, b);
+            c.set_transition_length(600);
+            c.perform();
+          }
+
+          // --- Timers do novo estado ---
+          if (novo == 1) id(pre_partida_timer).execute();
+          if (novo == 4) id(sucesso_timer).execute();
+
+  # ---- E1: delay de pré-partida, depois decide E2 ou E3 ----
+  - id: pre_partida_timer
+    mode: restart
+    then:
+      - delay: ${tempo_pre_partida}
+      - lambda: |-
+          if (id(fsm_state) != 1) return;  // pausa/nível cancelaram no meio
+          if (id(manual_mode))            id(goto_state).execute(3);
+          else if (id(water_level) == 2)  id(goto_state).execute(2);
+          else                            id(goto_state).execute(3);
+
+  # ---- E4: verde por 1 minuto, depois volta ao Standby ----
+  - id: sucesso_timer
+    mode: restart
+    then:
+      - delay: ${tempo_verde_sucesso}
+      - lambda: |-
+          if (id(fsm_state) == 4) id(goto_state).execute(0);
+
+  # ---- Inching: tempo máximo de bomba ligada (proteção contra boia quebrada) ----
+  # Se a boia superior quebrar e nunca sinalizar "cheia", a bomba não pode
+  # ficar ligada para sempre. Após ${tempo_maximo_bomba} contínuos, o sistema
+  # entra em MODO PAUSA (E8): desliga tudo, LED amarelo, e fica travado até
+  # o clique longo do usuário (falha exige inspeção humana).
+  - id: limite_bomba_timer
+    mode: restart
+    then:
+      - delay: ${tempo_maximo_bomba}
+      - lambda: |-
+          if (id(fsm_state) == 2 || id(fsm_state) == 3) {
+            ESP_LOGW("fsm", "INCHING: bomba ligada ha ${tempo_maximo_bomba} sem encher - boia superior pode ter quebrado. Entrando em MODO PAUSA.");
+            id(pausa_automatica) = true;  // pausa AUTOMATICA: amarelo piscando
+            id(goto_state).execute(8);
+          }
+
+  # ---- E9: Rotina de Boot Seguro (recuperação de apagão) ----
+  - id: boot_seguro
+    then:
+      - delay: 2s   # estabiliza a leitura do ADC e absorve flicker de rede
+      - lambda: |-
+          int salvo = id(fsm_state);
+          ESP_LOGI("fsm", "E9 Boot Seguro. Estado gravado na flash: %d", salvo);
+          if (salvo == 8) {                       // caiu em Pausa -> permanece travado
+            id(goto_state).execute(8);            // (pausa_automatica restaurada da flash)
+          } else if (salvo >= 5 && salvo <= 7) {  // caiu em Falha -> exige reset manual
+            id(goto_state).execute(salvo);
+          } else if (salvo >= 1 && salvo <= 3) {  // caiu enchendo -> reteste completo
+            if (id(water_level) == 0) id(goto_state).execute(0);  // já encheu
+            else id(goto_state).execute(1);       // E1: 5s + bomba + blanking do zero
+          } else {                                // E0/E4 -> pronto
+            id(goto_state).execute(0);
+          }
+
+  # ---- Clique Curto (< 1.0s): liga/desliga manual ou reset de falha ----
+  - id: clique_curto
+    then:
+      - lambda: |-
+          switch (id(fsm_state)) {
+            case 0:  // liga manual
+              if (id(water_level) == 0) {
+                // Caixa já cheia: responde com o verde de sucesso (feedback)
+                // em vez de dar um "blip" de 1-2s no contator.
+                ESP_LOGI("fsm", "Partida manual ignorada: caixa ja esta cheia");
+                id(goto_state).execute(4);
+              } else {
+                id(manual_mode) = true;
+                id(goto_state).execute(1);
+              }
+              break;
+            case 3:  // desliga enchimento manual/intermediário
+            case 4:  // dispensa o verde de sucesso
+              id(goto_state).execute(0);
+              break;
+            case 5:  // reconhece falha de contator (se a corrente persistir, E5 volta em ~3s)
+            case 6:
+            case 7:  // reconhece a falha; boias reavaliam e religam com E1+blanking
+              ESP_LOGI("fsm", "Falha reconhecida pelo usuario");
+              id(goto_state).execute(0);
+              break;
+            default:  // E1, E2 e E8 ignoram o clique curto
+              break;
+          }
+
+  # ---- Clique Longo (>= 1.5s): Modo Pausa soberano, de QUALQUER estado ----
+  - id: clique_longo
+    then:
+      - lambda: |-
+          if (id(fsm_state) == 8) {
+            // Sai da pausa: limpa a memória e reavalia a casa (via boias -> E1)
+            ESP_LOGI("fsm", "Saindo do Modo Pausa - reavaliando a casa");
+            id(goto_state).execute(0);
+          } else {
+            ESP_LOGI("fsm", "MODO PAUSA ativado (manutencao)");
+            id(pausa_automatica) = false;  // pausa MANUAL: amarelo solido
+            id(goto_state).execute(8);
+          }
+
+# =====================================================================
+#  ENTRADAS
+# =====================================================================
+binary_sensor:
+  # Botão inox da cozinha (contato seco no UTP, fecha para GND)
+  - platform: gpio
+    id: botao_cozinha
+    name: "Botão Cozinha"
+    pin:
+      number: ${pino_botao}
+      mode:
+        input: true
+        pullup: true
+      inverted: true
+    filters:
+      - delayed_on: 30ms
+      - delayed_off: 30ms
+    on_multi_click:
+      # Clique longo: dispara AOS 1.5s, ainda com o botão pressionado
+      - timing:
+          - ON for at least 1.5s
+        then:
+          - script.execute: clique_longo
+      # Clique curto: solto antes de 1.0s (zona morta entre 1.0s e 1.5s)
+      - timing:
+          - ON for at most 1s
+          - OFF for at least 0.3s
+        then:
+          - script.execute: clique_curto
+
+  - platform: template
+    name: "Bomba Ligada"
+    device_class: running
+    lambda: return id(rele_bomba).state;
+
+  - platform: status
+    name: "Status Wi-Fi"
+
+# =====================================================================
+#  SENSORES
+# =====================================================================
+uart:
+  tx_pin: ${pino_uart_tx}
+  rx_pin: ${pino_uart_rx}
+  baud_rate: 9600
+
+modbus:
+
+sensor:
+  # ---- Matriz das 2 boias em 2 fios (leitura analógica) ----
+  - platform: adc
+    id: boias_adc
+    name: "Tensão Boias"
+    pin: ${pino_adc_boias}
+    attenuation: 12db
+    update_interval: 1s
+    accuracy_decimals: 2
+    filters:
+      - median:
+          window_size: 5
+          send_every: 1
+          send_first_at: 1
+    on_value:
+      then:
+        - lambda: |-
+            static const char *LVL[] = {"Cheia", "Intermediario", "Critico"};
+
+            // ----- Supervisão do laço (EOL): sensor desconectado ou em curto -----
+            // Fora das faixas válidas: cabo rompido (>2.9V), curto (<0.35V)
+            // ou pino flutuando (sem nada conectado). Sustentado por
+            // ${sensor_falho_leituras}s -> FALHA SENSOR: pausa automática.
+            bool falho = (x > ${adc_sem_sensor_acima_de}) || (x < ${adc_curto_abaixo_de});
+            if (falho) {
+              id(sensor_falho_contagem)++;
+              if (id(sensor_falho_contagem) >= ${sensor_falho_leituras} && id(water_level) != 4) {
+                id(water_level) = 4;
+                id(nivel_texto).publish_state("FALHA SENSOR");
+                ESP_LOGE("nivel", "SENSOR DE BOIAS INVALIDO (%.2f V) - rompido, em curto ou desconectado!", x);
+                id(ocorrencia_texto).publish_state("Sensor de boias rompido/curto/desconectado");
+                int s = id(fsm_state);
+                if (s >= 0 && s <= 3) {  // parado ou enchendo: exige inspeção
+                  id(pausa_automatica) = true;
+                  id(goto_state).execute(8);
+                }
+              }
+              return;  // leitura inválida não alimenta a histerese de nível
+            }
+            id(sensor_falho_contagem) = 0;
+
+            int bruto;
+            if (x > ${adc_cheia_acima_de})              bruto = 0;  // Cheia
+            else if (x > ${adc_intermediario_acima_de}) bruto = 1;  // Intermediário
+            else                                        bruto = 2;  // Crítico
+
+            // ----- Histerese: só aceita mudança após N leituras estáveis -----
+            // Evita que a marola na boia (E2<->E3) pisque o LED e desgaste a
+            // flash com gravações repetidas. 1ª leitura pós-boot (ou pós-falha
+            // de sensor) entra pela histerese normal de ${nivel_leituras_estaveis}s.
+            if (id(water_level) == 3) {
+              id(water_level) = bruto;
+              id(nivel_texto).publish_state(LVL[bruto]);
+              ESP_LOGI("nivel", "Nivel inicial: %s (%.2f V)", LVL[bruto], x);
+            } else if (bruto == id(water_level)) {
+              id(nivel_contagem) = 0;  // leitura confirma o nível atual
+            } else {
+              if (bruto == id(nivel_candidato)) id(nivel_contagem)++;
+              else { id(nivel_candidato) = bruto; id(nivel_contagem) = 1; }
+              if (id(nivel_contagem) >= ${nivel_leituras_estaveis}) {
+                id(water_level) = bruto;
+                id(nivel_contagem) = 0;
+                id(nivel_texto).publish_state(LVL[bruto]);
+                ESP_LOGI("nivel", "Nivel: %s (%.2f V)", LVL[bruto], x);
+              }
+            }
+
+            // ----- Transições automáticas pelo nível ACEITO -----
+            int s = id(fsm_state);
+            int lvl = id(water_level);
+            if (s == 8 || s == 5 || s == 6 || s == 7) return;  // Pausa/Falha ignoram boias
+            if (lvl > 2) return;                               // nível desconhecido/falho
+            if (s == 0 && lvl == 2)              id(goto_state).execute(1);  // auto-partida
+            else if (s == 1 && lvl == 0)         id(goto_state).execute(0);  // encheu na espera
+            else if (s == 2 && lvl == 1)         id(goto_state).execute(3);  // saiu do crítico
+            else if ((s == 2 || s == 3) && lvl == 0) id(goto_state).execute(4);  // SUCESSO
+
+  # ---- PZEM-004T V3 (10A, shunt interno) via Modbus/UART ----
+  - platform: pzemac
+    update_interval: 3s
+    current:
+      name: "Corrente da Bomba"
+      id: corrente_bomba
+      accuracy_decimals: 2
+      on_value:
+        then:
+          - lambda: |-
+              if (std::isnan(x)) return;
+              int s = id(fsm_state);
+
+              // ----- CORRENTE FANTASMA: contator soldado (E5) -----
+              // Relé comandado DESLIGADO mas o motor consome corrente:
+              // os contatos do relé/contator soldaram fechados. O software
+              // não consegue cortar (defeito mecânico) — alarma para o
+              // usuário desligar o disjuntor. Vale em QUALQUER estado.
+              if (!id(rele_bomba).state && s != 5 &&
+                  x > ${corrente_fantasma} &&
+                  (millis() - id(pump_stopped_at)) > ${fantasma_grace_ms}) {
+                ESP_LOGE("fsm", "CORRENTE FANTASMA %.2f A com rele desligado - CONTATOR SOLDADO! Desligue o disjuntor!", x);
+                id(goto_state).execute(5);
+                return;
+              }
+
+              if (s != 2 && s != 3) return;          // demais checks: só com bomba ligada
+              if (!id(rele_bomba).state) return;
+              // Blanking time: cegueira de 5s na partida (pico de arranque)
+              if (millis() - id(pump_started_at) < ${blanking_ms}) return;
+              if (x > ${corrente_maxima}) {
+                ESP_LOGW("fsm", "SOBRECORRENTE %.2f A - rotor preso!", x);
+                id(goto_state).execute(6);
+              } else if (x < ${corrente_minima}) {
+                ESP_LOGW("fsm", "SUBCORRENTE %.2f A - bomba a seco!", x);
+                id(goto_state).execute(7);
+              }
+    voltage:
+      name: "Tensão da Rede"
+      accuracy_decimals: 1
+    power:
+      name: "Potência da Bomba"
+      accuracy_decimals: 1
+    energy:
+      name: "Energia Consumida"
+
+  - platform: wifi_signal
+    name: "Sinal Wi-Fi"
+    update_interval: 60s
+    entity_category: diagnostic
+
+# =====================================================================
+#  SAÍDAS
+# =====================================================================
+switch:
+  # Relé (canal 4 do YYNMOS-4). Interno: SÓ a FSM comanda a bomba.
+  # ALWAYS_OFF: boot cru nunca religa — quem decide é a E9 (boot_seguro).
+  - platform: gpio
+    id: rele_bomba
+    pin: ${pino_rele}
+    restore_mode: ALWAYS_OFF
+    internal: true
+
+output:
+  # YYNMOS-4 é chave low-side: sinal ALTO no canal acende o LED
+  # (anodo comum no 5V). Por isso NÃO se usa inverted aqui.
+  - platform: ledc
+    id: out_r
+    pin: ${pino_led_r}
+  - platform: ledc
+    id: out_g
+    pin: ${pino_led_g}
+  - platform: ledc
+    id: out_b
+    pin: ${pino_led_b}
+
+light:
+  - platform: rgb
+    id: led_cozinha
+    name: "LED Botão Cozinha"
+    red: out_r
+    green: out_g
+    blue: out_b
+    default_transition_length: 500ms
+    effects:
+      - strobe:
+          name: "Falha Vermelho"
+          colors:
+            - state: true
+              brightness: 100%
+              red: 100%
+              green: 0%
+              blue: 0%
+              duration: 400ms
+            - state: false
+              duration: 400ms
+      - strobe:
+          name: "Falha Azul"
+          colors:
+            - state: true
+              brightness: 100%
+              red: 0%
+              green: 0%
+              blue: 100%
+              duration: 400ms
+            - state: false
+              duration: 400ms
+      # E5 Contator soldado: branco piscando rápido (alarme máximo)
+      - strobe:
+          name: "Falha Branco"
+          colors:
+            - state: true
+              brightness: 100%
+              red: 100%
+              green: 100%
+              blue: 100%
+              duration: 300ms
+            - state: false
+              duration: 300ms
+      # E8 por inching (automático): amarelo piscando lento —
+      # distingue da pausa manual (amarelo sólido)
+      - strobe:
+          name: "Pausa Piscando"
+          colors:
+            - state: true
+              brightness: 100%
+              red: 100%
+              green: 100%
+              blue: 0%
+              duration: 700ms
+            - state: false
+              duration: 700ms
+
+# =====================================================================
+#  INTERFACE COM O HOME ASSISTANT
+# =====================================================================
+text_sensor:
+  - platform: template
+    id: fsm_texto
+    name: "Estado do Sistema"
+    icon: mdi:state-machine
+
+  - platform: template
+    id: nivel_texto
+    name: "Nível da Caixa"
+    icon: mdi:water-percent
+
+  # Registro do "porquê" do último alarme (E5/E6/E7/inching) — post-mortem
+  - platform: template
+    id: ocorrencia_texto
+    name: "Última Ocorrência"
+    icon: mdi:alert-circle-outline
+
+button:
+  # Espelham exatamente o botão físico — mesma lógica, sem atalhos inseguros
+  - platform: template
+    name: "Clique Curto (Liga/Desliga/Reset)"
+    icon: mdi:gesture-tap-button
+    on_press:
+      - script.execute: clique_curto
+
+  - platform: template
+    name: "Clique Longo (Modo Pausa)"
+    icon: mdi:pause-octagon
+    on_press:
+      - script.execute: clique_longo
