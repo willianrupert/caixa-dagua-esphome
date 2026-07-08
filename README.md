@@ -11,17 +11,17 @@ Um único botão de inox na cozinha, com LED RGB, comanda e reporta tudo. A lóg
 
 ---
 
-## ✨ Destaques
+## Destaques
 
-- 🧠 **Máquina de estados completa** (10 estados) com persistência em flash e recuperação segura pós-apagão
-- 🔘 **Um botão, duas intenções:** clique curto (< 1 s) liga/desliga/reseta; clique longo (≥ 1.5 s) ativa o Modo Pausa soberano
-- 🌈 **LED RGB como interface:** cada estado tem uma cor — de apagado (tudo OK) a branco piscando (alarme máximo)
-- ⏱️ **Inching:** a bomba nunca fica ligada mais de 10 min contínuos — proteção contra boia quebrada
-- 👻 **Detecção de corrente fantasma:** relé desligado + corrente no motor = contator soldado → alarme para desligar o disjuntor
-- 🔗 **Sensor de nível supervisionado (laço EOL):** cabo rompido, em curto ou desconectado é detectado, como em central de alarme
-- 🌊 **Histerese anti-marola:** ondulação da água não causa oscilação de estado nem desgaste da flash
-- 📱 **Botão digital no Home Assistant:** réplica fiel do botão físico — mesmas cores, toque = clique curto, segurar = clique longo
-- 🔌 **Zero solda:** trilho DIN, bornes de parafuso e módulos prontos
+- **Máquina de estados completa** (10 estados) com persistência em flash e recuperação segura pós-apagão
+- **Um botão, duas intenções:** clique curto (< 1 s) liga/desliga/reseta; clique longo (≥ 1.5 s) ativa o Modo Pausa soberano
+- **LED RGB como interface:** cada estado tem uma cor — de apagado (tudo OK) a branco piscando (alarme máximo)
+- **Inching:** a bomba nunca fica ligada mais de 10 min contínuos — proteção contra boia quebrada
+- **Detecção de corrente fantasma:** relé desligado + corrente no motor = contator soldado → alarme para desligar o disjuntor
+- **Sensor de nível supervisionado (laço EOL):** cabo rompido, em curto ou desconectado é detectado, como em central de alarme
+- **Histerese anti-marola:** ondulação da água não causa oscilação de estado nem desgaste da flash
+- **Botão digital no Home Assistant:** réplica fiel do botão físico — mesmas cores, toque = clique curto, segurar = clique longo
+- **Zero solda:** trilho DIN, bornes de parafuso e módulos prontos
 
 ## 🗺️ Máquina de Estados
 
@@ -69,7 +69,7 @@ stateDiagram-v2
 
 > **Clique longo (≥ 1.5 s) leva a E8 a partir de QUALQUER estado** — é a interrupção soberana de manutenção. **Corrente fantasma leva a E5 de qualquer estado com o relé desligado**, inclusive durante a Pausa.
 
-## 🌈 O LED conta tudo
+## O LED conta tudo
 
 | Cor | Significado |
 |---|---|
