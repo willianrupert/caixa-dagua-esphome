@@ -42,15 +42,14 @@ substitutions:
   adc_curto_abaixo_de: "0.35"         # Volts — abaixo disso: cabo em curto
   sensor_falho_leituras: "15"         # leituras (1s) fora das faixas p/ declarar falha
 
-  # Bomba Intech BSCA2 1/4 HP 220V — calibrar com pinça amperimétrica
-  corrente_maxima: "3.0"   # A — acima disso = rotor preso (E6)
-  corrente_minima: "0.5"   # A — abaixo disso = bomba a seco (E7)
+  # Bomba Intech BSCA2 1/4 HP 220V — corrente máxima/mínima e o tempo máximo
+  # de inching viraram `number` ajustáveis pelo Home Assistant (seção NÚMEROS
+  # DE CONFIGURAÇÃO, mais abaixo). Os valores abaixo são só os defaults de
+  # fábrica usados na 1ª partida (depois disso quem manda é o valor salvo).
 
   tempo_pre_partida: 5s    # delay E1 antes de ligar a bomba
   tempo_verde_sucesso: 60s # duração do LED verde em E4
   blanking_ms: "5000"      # cegueira de partida do PZEM (ms)
-  tempo_maximo_bomba: 10min # inching: limite contínuo de bomba ligada;
-                            # se estourar (boia máx. quebrada?) -> MODO PAUSA
 
   corrente_fantasma: "0.5"       # A — corrente com relé DESLIGADO = contator soldado (E5)
   fantasma_grace_ms: "10000"     # ms de tolerância após desligar (cauda de leitura do PZEM)
@@ -164,6 +163,24 @@ globals:
     restore_value: false
     initial_value: '0'
 
+  # ---- Teste manual da bomba (mede corrente p/ calibrar os `number`) ----
+  - id: teste_ativo
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+  - id: teste_inicio
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
+  - id: teste_pico_partida
+    type: float
+    restore_value: false
+    initial_value: '0'
+  - id: teste_regime
+    type: float
+    restore_value: false
+    initial_value: 'NAN'
+
 # =====================================================================
 #  NÚCLEO DA FSM
 # =====================================================================
@@ -194,8 +211,12 @@ script:
           if (novo == 5)      id(ocorrencia_texto).publish_state("Contator soldado: corrente com rele DESLIGADO!");
           else if (novo == 6) id(ocorrencia_texto).publish_state("Rotor preso (sobrecorrente)");
           else if (novo == 7) id(ocorrencia_texto).publish_state("Bomba a seco (subcorrente)");
-          else if (novo == 8 && id(pausa_automatica))
-            id(ocorrencia_texto).publish_state("Inching: ${tempo_maximo_bomba} sem encher - verificar boia superior");
+          else if (novo == 8 && id(pausa_automatica)) {
+            char buf[80];
+            snprintf(buf, sizeof(buf), "Inching: %.0f min sem encher - verificar boia superior",
+                     id(numero_tempo_maximo_bomba).state);
+            id(ocorrencia_texto).publish_state(buf);
+          }
 
           // --- Bomba: liga somente em E2/E3; qualquer outro estado desliga ---
           // O limite de tempo (inching) segue o RELÉ, não o estado: a transição
@@ -211,7 +232,10 @@ script:
             id(limite_bomba_timer).stop();
           }
 
-          // --- LED RGB da cozinha (fades suaves / efeitos de alarme) ---
+          // --- LED RGB da cozinha (fades suaves em PWM / respiração nos alarmes) ---
+          // Alarmes usam o efeito "pulse" (respiração de brilho, 4s de período)
+          // sobre a MESMA cor sólida do estado — por isso a cor é escolhida uma
+          // única vez abaixo e reaproveitada tanto no efeito quanto no sólido.
           const char *efeito = nullptr;
           if (novo == 5)      efeito = "Falha Branco";
           else if (novo == 6) efeito = "Falha Vermelho";
@@ -223,11 +247,6 @@ script:
             c.set_effect("None");
             c.set_transition_length(800);
             c.perform();
-          } else if (efeito != nullptr) {
-            auto c = id(led_cozinha).turn_on();
-            c.set_brightness(1.0);
-            c.set_effect(efeito);
-            c.perform();
           } else {
             float r = 0, g = 0, b = 0;
             switch (novo) {
@@ -235,10 +254,13 @@ script:
               case 2: r = 1; b = 1; break;  // Roxo/Pink: enchendo crítico
               case 3: b = 1;        break;  // Azul: intermediário/manual
               case 4: g = 1;        break;  // Verde: sucesso
-              case 8: r = 1; g = 1; break;  // Amarelo sólido: Pausa MANUAL
+              case 5: r = 1; g = 1; b = 1; break;  // Branco: falha contator soldado
+              case 6: r = 1;        break;  // Vermelho: falha sobrecorrente
+              case 7: b = 1;        break;  // Azul: falha subcorrente
+              case 8: r = 1; g = 1; break;  // Amarelo: Pausa (sólido=manual, pulsando=automática)
             }
             auto c = id(led_cozinha).turn_on();
-            c.set_effect("None");
+            c.set_effect(efeito != nullptr ? efeito : "None");
             c.set_brightness(1.0);
             c.set_rgb(r, g, b);
             c.set_transition_length(600);
@@ -270,19 +292,72 @@ script:
 
   # ---- Inching: tempo máximo de bomba ligada (proteção contra boia quebrada) ----
   # Se a boia superior quebrar e nunca sinalizar "cheia", a bomba não pode
-  # ficar ligada para sempre. Após ${tempo_maximo_bomba} contínuos, o sistema
-  # entra em MODO PAUSA (E8): desliga tudo, LED amarelo, e fica travado até
-  # o clique longo do usuário (falha exige inspeção humana).
+  # ficar ligada para sempre. Após ${numero_tempo_maximo_bomba} contínuos, o
+  # sistema entra em MODO PAUSA (E8): desliga tudo, LED amarelo, e fica
+  # travado até o clique longo do usuário (falha exige inspeção humana).
   - id: limite_bomba_timer
     mode: restart
     then:
-      - delay: ${tempo_maximo_bomba}
+      - delay: !lambda 'return (uint32_t)(id(numero_tempo_maximo_bomba).state * 60000);'
       - lambda: |-
           if (id(fsm_state) == 2 || id(fsm_state) == 3) {
-            ESP_LOGW("fsm", "INCHING: bomba ligada ha ${tempo_maximo_bomba} sem encher - boia superior pode ter quebrado. Entrando em MODO PAUSA.");
+            ESP_LOGW("fsm", "INCHING: bomba ligada ha %.0f min sem encher - boia superior pode ter quebrado. Entrando em MODO PAUSA.",
+                     id(numero_tempo_maximo_bomba).state);
             id(pausa_automatica) = true;  // pausa AUTOMATICA: amarelo piscando
             id(goto_state).execute(8);
           }
+
+  # ---- Teste manual da bomba: mede corrente de partida e de regime ----
+  # Só roda a partir do Standby (E0), fora da FSM normal, por uma janela fixa
+  # e travada de 10s — serve para calibrar numero_corrente_maxima/minima com
+  # segurança, sem depender só da pinça amperimétrica na instalação.
+  - id: testar_bomba
+    then:
+      - if:
+          condition:
+            lambda: 'return id(fsm_state) == 0 && !id(rele_bomba).state;'
+          then:
+            - lambda: |-
+                id(teste_pico_partida) = 0;
+                id(teste_regime) = NAN;
+                id(teste_inicio) = millis();
+                id(teste_ativo) = true;
+                id(pzem_bomba).set_update_interval(1000);  // amostragem rápida durante o teste
+                auto c = id(led_cozinha).turn_on();
+                c.set_rgb(1, 1, 1);
+                c.set_brightness(1.0);
+                c.set_transition_length(300);
+                c.perform();
+            - switch.turn_on: rele_bomba
+            - delay: 10s
+            - switch.turn_off: rele_bomba
+            - lambda: |-
+                // Sem isso, o teste some com a proteção de "cauda de leitura do
+                // PZEM" (fantasma_grace_ms) que a FSM normal sempre aplica ao
+                // desligar a bomba (ver goto_state) — o relé aqui é comandado
+                // direto, fora do goto_state, então ninguém mais atualiza isto.
+                id(pump_stopped_at) = millis();
+            - delay: 500ms
+            - lambda: |-
+                id(teste_ativo) = false;
+                id(pzem_bomba).set_update_interval(3000);
+                id(led_cozinha).turn_off().perform();
+                id(teste_partida_sensor).publish_state(id(teste_pico_partida));
+                char buf[96];
+                if (!std::isnan(id(teste_regime))) {
+                  id(teste_regime_sensor).publish_state(id(teste_regime));
+                  snprintf(buf, sizeof(buf), "Teste manual: partida %.2f A / regime %.2f A",
+                           id(teste_pico_partida), id(teste_regime));
+                } else {
+                  snprintf(buf, sizeof(buf), "Teste manual: partida %.2f A (regime nao capturado)",
+                           id(teste_pico_partida));
+                }
+                id(ocorrencia_texto).publish_state(buf);
+          else:
+            - logger.log:
+                level: WARN
+                tag: teste
+                format: "Teste de bomba ignorado: sistema nao esta pronto em Standby"
 
   # ---- E9: Rotina de Boot Seguro (recuperação de apagão) ----
   - id: boot_seguro
@@ -473,6 +548,7 @@ sensor:
 
   # ---- PZEM-004T V3 (10A, shunt interno) via Modbus/UART ----
   - platform: pzemac
+    id: pzem_bomba
     update_interval: 3s
     current:
       name: "Corrente da Bomba"
@@ -480,6 +556,23 @@ sensor:
       accuracy_decimals: 2
       on_value:
         then:
+          # ----- Amostragem do teste manual da bomba (não interfere na FSM) -----
+          - lambda: |-
+              if (!id(teste_ativo) || std::isnan(x)) return;
+              uint32_t dt = millis() - id(teste_inicio);
+              if (dt < 3000) {
+                if (x > id(teste_pico_partida)) id(teste_pico_partida) = x;  // pico de partida
+              } else if (dt >= 6000 && std::isnan(id(teste_regime))) {
+                id(teste_regime) = x;  // corrente já assentada (regime)
+              }
+              // Segurança absoluta do teste: corrente muito acima do limite
+              // configurado corta a bomba na hora, sem esperar os 10s do teste.
+              if (x > id(numero_corrente_maxima).state * 2.0f) {
+                ESP_LOGE("teste", "Teste abortado: corrente %.2f A muito acima do limite!", x);
+                id(rele_bomba).turn_off();
+                id(teste_ativo) = false;
+                id(led_cozinha).turn_off().perform();
+              }
           - lambda: |-
               if (std::isnan(x)) return;
               int s = id(fsm_state);
@@ -501,11 +594,11 @@ sensor:
               if (!id(rele_bomba).state) return;
               // Blanking time: cegueira de 5s na partida (pico de arranque)
               if (millis() - id(pump_started_at) < ${blanking_ms}) return;
-              if (x > ${corrente_maxima}) {
-                ESP_LOGW("fsm", "SOBRECORRENTE %.2f A - rotor preso!", x);
+              if (x > id(numero_corrente_maxima).state) {
+                ESP_LOGW("fsm", "SOBRECORRENTE %.2f A (limite %.2f A) - rotor preso!", x, id(numero_corrente_maxima).state);
                 id(goto_state).execute(6);
-              } else if (x < ${corrente_minima}) {
-                ESP_LOGW("fsm", "SUBCORRENTE %.2f A - bomba a seco!", x);
+              } else if (x < id(numero_corrente_minima).state) {
+                ESP_LOGW("fsm", "SUBCORRENTE %.2f A (limite %.2f A) - bomba a seco!", x, id(numero_corrente_minima).state);
                 id(goto_state).execute(7);
               }
     voltage:
@@ -521,6 +614,23 @@ sensor:
     name: "Sinal Wi-Fi"
     update_interval: 60s
     entity_category: diagnostic
+
+  # ---- Resultado do teste manual da bomba (ver script testar_bomba) ----
+  - platform: template
+    id: teste_partida_sensor
+    name: "Corrente de Partida (Teste)"
+    icon: mdi:current-ac
+    unit_of_measurement: "A"
+    accuracy_decimals: 2
+    device_class: current
+
+  - platform: template
+    id: teste_regime_sensor
+    name: "Corrente de Regime (Teste)"
+    icon: mdi:current-ac
+    unit_of_measurement: "A"
+    accuracy_decimals: 2
+    device_class: current
 
 # =====================================================================
 #  SAÍDAS
@@ -556,53 +666,84 @@ light:
     blue: out_b
     default_transition_length: 500ms
     effects:
-      - strobe:
+      # Alarmes "respiram" em vez de piscar em onda quadrada: brilho sobe e desce
+      # em rampa PWM suave (mesma curva de transição usada nos fades normais),
+      # 4s de período total, sem nunca apagar de vez (min_brightness > 0).
+      # A cor em si (quem está sólida) é fixada por set_rgb() antes do efeito,
+      # já que o "pulse" só modula o brilho.
+      - pulse:
           name: "Falha Vermelho"
-          colors:
-            - state: true
-              brightness: 100%
-              red: 100%
-              green: 0%
-              blue: 0%
-              duration: 400ms
-            - state: false
-              duration: 400ms
-      - strobe:
+          transition_length: 1900ms
+          update_interval: 2s
+          min_brightness: 15%
+          max_brightness: 100%
+      - pulse:
           name: "Falha Azul"
-          colors:
-            - state: true
-              brightness: 100%
-              red: 0%
-              green: 0%
-              blue: 100%
-              duration: 400ms
-            - state: false
-              duration: 400ms
-      # E5 Contator soldado: branco piscando rápido (alarme máximo)
-      - strobe:
+          transition_length: 1900ms
+          update_interval: 2s
+          min_brightness: 15%
+          max_brightness: 100%
+      # E5 Contator soldado (alarme máximo): mesma respiração de 4s
+      - pulse:
           name: "Falha Branco"
-          colors:
-            - state: true
-              brightness: 100%
-              red: 100%
-              green: 100%
-              blue: 100%
-              duration: 300ms
-            - state: false
-              duration: 300ms
-      # E8 por inching (automático): amarelo piscando lento —
-      # distingue da pausa manual (amarelo sólido)
-      - strobe:
+          transition_length: 1900ms
+          update_interval: 2s
+          min_brightness: 15%
+          max_brightness: 100%
+      # E8 por inching (automático): respiração amarela —
+      # distingue da pausa manual (amarelo sólido, sem pulso)
+      - pulse:
           name: "Pausa Piscando"
-          colors:
-            - state: true
-              brightness: 100%
-              red: 100%
-              green: 100%
-              blue: 0%
-              duration: 700ms
-            - state: false
-              duration: 700ms
+          transition_length: 1900ms
+          update_interval: 2s
+          min_brightness: 15%
+          max_brightness: 100%
+
+# =====================================================================
+#  NÚMEROS DE CONFIGURAÇÃO (ajustáveis pelo Home Assistant)
+# =====================================================================
+# `restore_value` grava na flash: uma vez ajustado pelo usuário, o valor
+# sobrevive a reboot/OTA. O valor inicial é o mesmo default histórico
+# do projeto (10 min / 3.0 A / 0.5 A).
+number:
+  - platform: template
+    id: numero_tempo_maximo_bomba
+    name: "Tempo Máximo da Bomba (Inching)"
+    icon: mdi:timer-alert-outline
+    unit_of_measurement: min
+    min_value: 2
+    max_value: 30
+    step: 1
+    mode: box
+    optimistic: true
+    restore_value: true
+    initial_value: 10
+
+  - platform: template
+    id: numero_corrente_maxima
+    name: "Corrente Máxima (Rotor Preso)"
+    icon: mdi:current-ac
+    unit_of_measurement: "A"
+    min_value: 0.5
+    max_value: 8.0
+    step: 0.1
+    mode: box
+    optimistic: true
+    restore_value: true
+    initial_value: 3.0
+
+  - platform: template
+    id: numero_corrente_minima
+    name: "Corrente Mínima (Bomba a Seco)"
+    icon: mdi:current-ac
+    unit_of_measurement: "A"
+    min_value: 0.1
+    max_value: 3.0
+    step: 0.05
+    mode: box
+    optimistic: true
+    restore_value: true
+    initial_value: 0.5
 
 # =====================================================================
 #  INTERFACE COM O HOME ASSISTANT
@@ -627,13 +768,23 @@ text_sensor:
 button:
   # Espelham exatamente o botão físico — mesma lógica, sem atalhos inseguros
   - platform: template
-    name: "Clique Curto (Liga/Desliga/Reset)"
+    id: botao_clique_curto
+    name: "Clique Curto (Liga-Desliga-Reset)"
     icon: mdi:gesture-tap-button
     on_press:
       - script.execute: clique_curto
 
   - platform: template
+    id: botao_clique_longo
     name: "Clique Longo (Modo Pausa)"
     icon: mdi:pause-octagon
     on_press:
       - script.execute: clique_longo
+
+  # Roda a bomba por 10s a partir do Standby, medindo corrente de partida
+  # e de regime — usar para calibrar os `number` de corrente acima.
+  - platform: template
+    name: "Testar Bomba (Medir Corrente)"
+    icon: mdi:test-tube
+    on_press:
+      - script.execute: testar_bomba

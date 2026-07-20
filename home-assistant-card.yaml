@@ -1,0 +1,163 @@
+# =====================================================================
+#  Caixa D'Água — card em produção (dashboard "Casa RLIGHT")
+#
+#  JÁ APLICADO AO VIVO (WS lovelace/config/save) em 2026-07-14 — este
+#  arquivo é o registro do que está rodando, não uma proposta.
+#  Backups do config anterior salvos localmente durante a sessão antes
+#  de cada gravação (não versionados aqui, ficaram no scratchpad).
+#
+#  NÃO TESTADO VISUALMENTE — não tenho como abrir um navegador na sua
+#  rede. Se o tamanho/posição não ficar bom, me diga o que ajustar
+#  (aspect_ratio, os "top"/"left" em % de cada elemento, o tamanho do
+#  botão em width/height e --mdc-icon-size).
+#
+#  Histórico do double_tap_action / layout deste card, mesma sessão:
+#    1. more-info (original, sem uso real)
+#    2. navigate -> subview "caixa-dagua-config" (antes do browser_mod)
+#    3. call-service browser_mod.popup, ainda no mushroom-template-card
+#       inteiro (compromisso: só dava pra abrir com duplo-clique)
+#    4. ESTA VERSÃO: virou "picture-elements" com 3 zonas de clique
+#       independentes, exatamente como combinado — sem duplo-clique.
+# =====================================================================
+type: picture-elements
+# imagem 1x1 transparente — só existe pra picture-elements aceitar a
+# config; aspect_ratio abaixo é quem realmente define a proporção do
+# cartão (a imagem em si nunca aparece).
+image: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=
+aspect_ratio: "65%"
+
+elements:
+  # -------------------------------------------------------------
+  # 1) FUNDO — invisível (opacity 0), cobre o cartão inteiro.
+  #    É o PRIMEIRO elemento da lista, então fica por BAIXO do botão
+  #    redondo (adicionado depois = renderizado por cima = ganha o
+  #    clique na própria área). Clicar em qualquer lugar fora do botão
+  #    cai aqui e abre o popup.
+  # -------------------------------------------------------------
+  - type: icon
+    icon: mdi:water
+    style:
+      top: 50%
+      left: 50%
+      width: 100%
+      height: 100%
+      opacity: 0
+    tap_action:
+      action: call-service
+      service: browser_mod.popup
+      data:
+        title: "Configuração — Caixa D'Água"
+        dismissable: true
+        content:
+          type: vertical-stack
+          cards:
+            - type: entities
+              title: Calibração de Segurança
+              entities:
+                - entity: number.caixa_d_agua_tempo_maximo_da_bomba_inching
+                  name: "Tempo máximo da bomba (inching)"
+                - entity: number.caixa_d_agua_corrente_maxima_rotor_preso
+                  name: "Corrente máxima (rotor preso)"
+                - entity: number.caixa_d_agua_corrente_minima_bomba_a_seco
+                  name: "Corrente mínima (bomba a seco)"
+            - type: entities
+              title: Teste Manual da Bomba
+              entities:
+                - entity: button.caixa_d_agua_testar_bomba_medir_corrente
+                  name: "Testar bomba (10s)"
+                - entity: sensor.caixa_d_agua_corrente_de_partida_teste
+                  name: "Corrente de partida (último teste)"
+                - entity: sensor.caixa_d_agua_corrente_de_regime_teste
+                  name: "Corrente de regime (último teste)"
+            - type: entities
+              title: Diagnóstico
+              entities:
+                - entity: sensor.caixa_d_agua_ultima_ocorrencia
+                  name: "Última ocorrência"
+                - entity: sensor.caixa_d_agua_nivel_da_caixa
+                  name: "Nível da caixa"
+
+  # -------------------------------------------------------------
+  # 2) TEXTO DO ESTADO DA FSM — pointer-events: none, não compete com
+  #    o fundo (o clique "atravessa" o texto e cai na camada 1).
+  #    Mostra o valor cru do sensor (ex. "E2 Recalque Critico"), não
+  #    a frase bonita que o mushroom-template-card montava via Jinja
+  #    — picture-elements nativo não faz template em campos de texto,
+  #    só o mushroom-template-card faz isso. Se quiser recuperar a
+  #    frase amigável ("Enchendo (crítico)"...) o caminho é instalar
+  #    card-mod (não instalado hoje).
+  # -------------------------------------------------------------
+  - type: state-label
+    entity: sensor.caixa_d_agua_estado_do_sistema
+    style:
+      top: 18%
+      left: 50%
+      transform: translate(-50%, -50%)
+      font-weight: "600"
+      font-size: 13px
+      pointer-events: none
+      color: var(--primary-text-color)
+      width: 92%
+      text-align: center
+
+  - type: state-label
+    entity: sensor.caixa_d_agua_nivel_da_caixa
+    style:
+      top: 32%
+      left: 50%
+      transform: translate(-50%, -50%)
+      font-size: 11px
+      opacity: 0.7
+      pointer-events: none
+      color: var(--secondary-text-color)
+
+  # -------------------------------------------------------------
+  # 3) BOTÃO REDONDO CENTRAL — espelha o botão físico da cozinha.
+  #    ATENÇÃO: a 1ª versão usava "state-badge", que na prática ignora
+  #    tap_action/hold_action e sempre abre o "mais informações" da
+  #    entidade (confirmado empiricamente: ao tocar, abriu o more-info
+  #    do light em vez de chamar os botões). Trocado para "state-icon",
+  #    que aceita tap_action/hold_action de verdade e também colore o
+  #    ícone pelo estado/rgb_color da entidade (state_color, default
+  #    true) — só que não vem com o fundo circular preenchido do
+  #    state-badge, por isso o "background"/"border-radius: 50%" abaixo
+  #    são manuais (CSS simples, isso é nativo do style: do picture-
+  #    elements, não precisa de card-mod).
+  #    Por ser o ÚLTIMO elemento da lista, fica por CIMA do fundo e
+  #    intercepta o clique só na própria área (64x64px).
+  # -------------------------------------------------------------
+  - type: state-icon
+    entity: light.caixa_d_agua_led_botao_cozinha
+    tap_action:
+      action: call-service
+      service: button.press
+      target:
+        entity_id: button.caixa_d_agua_clique_curto_liga_desliga_reset
+    hold_action:
+      action: call-service
+      service: button.press
+      target:
+        entity_id: button.caixa_d_agua_clique_longo_modo_pausa
+    style:
+      top: 68%
+      left: 50%
+      "--mdc-icon-size": 30px
+      width: 64px
+      height: 64px
+      border-radius: 50%
+      background: var(--card-background-color)
+      display: flex
+      align-items: center
+      justify-content: center
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4)
+
+grid_options:
+  columns: 6
+  rows: 2
+
+# ---------------------------------------------------------------------
+# NOTA sobre os entity_id: os 3 number + o button de teste + os 2
+# sensores de teste ainda NÃO existem no HA (só existirão depois que
+# você regravar o ESP32 com o caixa-dagua.yaml atualizado). Confirme em
+# Ferramentas do Desenvolvedor → Estados depois do primeiro boot.
+# =====================================================================
