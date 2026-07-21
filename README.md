@@ -104,7 +104,7 @@ CISTERNA                    QUADRO DE COMANDO                     COZINHA
 │ Bomba    │◄─────────│ Disjuntor → Contator ← Relé   │─────────►│ Botão   │
 │ BSCA2    │          │              ▲        ▲       │  6 vias  │ inox    │
 │ 1/4 HP   │          │           PZEM-004T   │       │          │ LED RGB │
-└──────────┘          │              ▼     YYNMOS-4   │          └─────────┘
+└──────────┘          │              ▼     ESP32-C3   │          └─────────┘
                       │  UART ─► ESP32-C3 ◄─ ADC      │
 CAIXA SUPERIOR        │  (ESPHome, lógica local)      │
 ┌──────────┐  2 fios  └──────────────────────────────┘
@@ -115,8 +115,8 @@ CAIXA SUPERIOR        │  (ESPHome, lógica local)      │
 
 - **ESP32-C3** (ESPHome) — cérebro local
 - **PZEM-004T 10 A** — telemetria de corrente/tensão/energia via UART
-- **YYNMOS-4** — interface MOSFET: 3 canais para o LED RGB + 1 para o relé
-- **Relé 5 V → Contator 12 A AC-3** — cascata de acionamento da bomba 220 V
+- **YYNMOS-4** — interface MOSFET: 3 canais para o LED RGB da cozinha (canal 4 não usado)
+- **Módulo relé 5 V (IN direto no GPIO7) → Contator 12 A AC-3** — cascata de acionamento da bomba 220 V
 - **2 boias reed + resistores 1 kΩ / 4.7 kΩ / 10 kΩ (EOL)** — nível em 2 fios, supervisionado
 
 O BOM completo, as tensões do divisor e todos os detalhes de engenharia estão no **[Memorial Descritivo](MEMORIAL-DESCRITIVO.md)**.

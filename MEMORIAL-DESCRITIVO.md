@@ -163,12 +163,12 @@ Se o sistema salvasse "bomba ligada" e religasse o relé direto no boot, haveria
 | Qtd | Item | Observações |
 |---|---|---|
 | 1 | **ESP32-C3** (via USB, firmware ESPHome) | Cérebro local: FSM, leitura das boias, PWM dos LEDs |
-| 1 | Placa interface MOSFET **YYNMOS-4** (4 canais) | Recebe 3.3 V do ESP32, libera 5 V nos bornes. Canais 1–3: LED RGB da cozinha; Canal 4: módulo relé |
+| 1 | Placa interface MOSFET **YYNMOS-4** (4 canais, 3 em uso) | Recebe 3.3 V do ESP32, libera 5 V nos bornes. Canais 1–3: LED RGB da cozinha; canal 4 não é usado |
 
 **Potência e Acionamento (cascata):**
 | Qtd | Item | Observações |
 |---|---|---|
-| 1 | Módulo relé 5 V 1 canal (azul ou SSR Omron) | Recebe sinal negativo do canal 4 do YYNMOS-4; fecha o circuito AC |
+| 1 | Módulo relé 5 V 1 canal, com optoacoplador (jumper JD-VCC) | Recebe sinal direto do GPIO7 do ESP32 (IN ativo em LOW); fecha o circuito AC da bobina do contator |
 | 1 | Contator monofásico 12A, categoria AC-3, bobina 220 V | Acionado pelo relé; é quem liga a bomba de fato |
 
 **Telemetria e Filtros Passivos:**
@@ -209,7 +209,7 @@ Se o sistema salvasse "bomba ligada" e religasse o relé direto no boot, haveria
 - **LED RGB:** 3 saídas `ledc` (PWM) → `light: rgb` com `transition` para os fades suaves. O botão é anodo comum, **mas** o YYNMOS-4 é chave low-side: sinal ALTO do ESP32 liga o canal e acende o LED → **não usar `inverted`** (só inverteria se o LED fosse ligado direto no GPIO).
 - **Boias:** `adc` sensor no pino analógico com filtro `median`, histerese de 4 leituras e supervisão do laço EOL (faixas válidas + zonas de falha).
 - **PZEM-004T:** componente nativo `pzemac` (V3/Modbus) via UART.
-- **Relé:** `switch: gpio` no canal 4 do YYNMOS-4, com `restore_mode: ALWAYS_OFF` (a E9 decide religar, nunca o boot cru).
+- **Relé:** `switch: gpio` direto no GPIO7 → módulo relé 5V (IN ativo em LOW, `pin: { inverted: true }` no ESPHome), com `restore_mode: ALWAYS_OFF` (a E9 decide religar, nunca o boot cru). O pull-up de IN do próprio módulo mantém o relé desligado enquanto o GPIO flutua no boot, antes do ESPHome assumir o pino — camada extra de segurança sobre o `ALWAYS_OFF`.
 - **Autonomia:** `reboot_timeout: 0s` em `wifi:` e `api:` — o chip jamais reinicia por falta de rede.
 - **Home Assistant:** expor estado da FSM (`text_sensor`), nível, "Última Ocorrência" e telemetria do PZEM; dois `button` template espelham os cliques físicos. Métricas de debug ficam **ocultas** no registro de entidades do HA (não no YAML). A lógica de segurança roda **100% local no ESP32**, independente do Wi-Fi/HA.
 

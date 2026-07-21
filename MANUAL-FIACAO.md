@@ -29,8 +29,6 @@ REDE 220V ──[disjuntor]──┤                                            
                          │                                 ▲           │  │
                          │                    RELÉ 5V ─────┘           │  │
                          │                       ▲                     │  │
-                         │           YYNMOS-4 canal 4 (IN4)             │  │
-                         │                       ▲                     │  │
                          │     ESP32-C3 ─── GPIO7 (rele)               │  │
                          │        │  │  │                              │  │
                          │  GPIO4 │  │  │ GPIO6      GPIO0 (ADC boias) │  │
@@ -51,8 +49,8 @@ REDE 220V ──[disjuntor]──┤                                            
 ```
 
 - **PZEM-004T** mede a corrente **em série** na fase (L) — a fase passa por dentro do módulo (bornes IN→OUT), não é grampo externo (shunt interno).
-- **YYNMOS-4** é uma chave *low-side* (liga pelo lado do GND): sinal ALTO do ESP32 no canal correspondente fecha aquele canal para o GND. Por isso a lógica de wiring do LED usa **anodo comum em +5V fixo** e cada cor é puxada para baixo pelo canal.
-- O **relé** só existe porque o YYNMOS-4 sozinho não chaveia 220 V — ele aciona o relé de baixa potência, que por sua vez aciona a **bobina do contator**, que é quem efetivamente liga a bomba.
+- **YYNMOS-4** é uma chave *low-side* (liga pelo lado do GND): sinal ALTO do ESP32 no canal correspondente fecha aquele canal para o GND. Por isso a lógica de wiring do LED usa **anodo comum em +5V fixo** e cada cor é puxada para baixo pelo canal. Só os canais 1–3 são usados (LED RGB) — o canal 4 não é mais usado.
+- O **relé** é um módulo pronto 5 V ligado **direto no GPIO7 do ESP32** (sem passar pelo YYNMOS-4), porque o ESP32 sozinho não chaveia 220 V — ele aciona o relé de baixa potência, que por sua vez aciona a **bobina do contator**, que é quem efetivamente liga a bomba. O módulo é *ativo em LOW* (trigger jumper em "L"): o ESPHome usa `inverted: true` nesse pino, então o relé liga quando o GPIO vai para GND.
 
 ---
 
@@ -72,8 +70,8 @@ REDE 220V ──[disjuntor]──┤                                            
 - Instale o **supressor de surto** (snubber RC ou varistor 275 V) **em paralelo direto nos bornes A1/A2** — protege o contato do relé do arco de abertura toda vez que a bobina desliga.
 
 **Módulo relé:**
-- Alimentação: 5 V (fonte DIN) + GND comum com o ESP32.
-- Sinal (IN): vem do **canal 4 do YYNMOS-4**.
+- Alimentação: VCC 5 V (fonte DIN) + GND comum com o ESP32. Se o módulo tiver jumper **JD-VCC** (optoacoplador), mantenha-o ligado ao VCC — o projeto usa uma única fonte 5 V para toda a baixa tensão (ver seção 6); isolamento galvânico de verdade exigiria uma segunda fonte dedicada só ao JD-VCC, o que não faz parte deste BOM.
+- Sinal (IN): vem **direto do GPIO7 do ESP32** (nível 3.3 V — o módulo aceita). Confira o jumper de trigger do módulo: este projeto assume **ativo em LOW** (`inverted: true` no ESPHome). Se o seu módulo estiver no modo "H" (ativo em HIGH), troque o jumper para "L" ou remova o `inverted: true` do YAML — mas teste com multímetro/LED antes de ligar o contator (item 9 da seção 7).
 - Contato de potência (COM/NA): em série com a fase que alimenta a bobina do contator (passo acima).
 
 > ⚠️ **Antes de energizar de vez:** com o disjuntor desligado, meça continuidade da bobina do contator (deve ter uma resistência baixa e finita — nunca aberta nem curto) e confira visualmente que L e N não estão trocados nos bornes do PZEM.
@@ -91,7 +89,7 @@ Tabela oficial de pinos (igual ao `substitutions:` do YAML — se mudar aqui, mu
 | `pino_led_r` | GPIO4 | YYNMOS-4, canal 1 (IN1) | Saída PWM |
 | `pino_led_g` | GPIO5 | YYNMOS-4, canal 2 (IN2) | Saída PWM |
 | `pino_led_b` | GPIO6 | YYNMOS-4, canal 3 (IN3) | Saída PWM |
-| `pino_rele` | GPIO7 | YYNMOS-4, canal 4 (IN4) → módulo relé | Saída digital |
+| `pino_rele` | GPIO7 | Módulo relé 5V, pino **IN** (direto, sem passar pelo YYNMOS-4) | Saída digital, ativa em LOW (`inverted: true`) |
 | `pino_uart_tx` | GPIO21 | PZEM-004T, **RX** | Saída serial |
 | `pino_uart_rx` | GPIO20 | PZEM-004T, **TX** | Entrada serial |
 
@@ -100,9 +98,8 @@ Tabela oficial de pinos (igual ao `substitutions:` do YAML — se mudar aqui, mu
 **YYNMOS-4 — alimentação:**
 - VCC: 5 V (fonte DIN)
 - GND: comum com o ESP32, a fonte 5V e o relé
-- IN1–IN4: GPIO4, GPIO5, GPIO6, GPIO7 do ESP32 (nível 3.3 V — o módulo aceita)
+- IN1–IN3: GPIO4, GPIO5, GPIO6 do ESP32 (nível 3.3 V — o módulo aceita). Canal 4 (IN4/OUT4) não é usado.
 - OUT1–OUT3: cátodos R/G/B do LED da cozinha
-- OUT4: entrada de sinal do módulo relé
 
 **PZEM-004T — alimentação e sinal (além dos bornes de potência da seção 2):**
 - VCC: 5 V (fonte DIN)
@@ -188,12 +185,13 @@ Com o disjuntor **ainda desligado**:
 6. [ ] Snubber/varistor instalado nos bornes A1/A2 do contator.
 7. [ ] Fiação de 220 V fisicamente separada da fiação de sinal dentro do quadro.
 8. [ ] GND comum de todo o lado de baixa tensão é um nó único, sem contato com o neutro de 220 V.
+9. [ ] Jumper de trigger do módulo relé confirmado em **"L" (ativo em LOW)** — ou o YAML ajustado se o seu módulo só tiver "H".
 
 Depois disso:
 
-9. [ ] Grave o firmware via USB (`esphome run caixa-dagua.yaml --device /dev/cu.usbmodemXXXX`) **antes** de energizar a bomba pela primeira vez — o ESP32 precisa estar rodando a FSM (E9 Boot Seguro) antes do disjuntor ir para ON.
-10. [ ] Ligue o disjuntor. Verifique no log/Home Assistant: tensão das boias, estado da FSM (deve entrar em E0 Standby ou E1 conforme o nível), tensão de rede e corrente no PZEM.
-11. [ ] Use o botão **"Testar Bomba (Medir Corrente)"** do Home Assistant (roda a bomba por 10 s a partir do Standby) para calibrar os limiares `Corrente Máxima` e `Corrente Mínima` (menu de números do dispositivo) com a corrente real medida, em vez de confiar só nos defaults de fábrica (3.0 A / 0.5 A).
+10. [ ] Grave o firmware via USB (`esphome run caixa-dagua.yaml --device /dev/cu.usbmodemXXXX`) **antes** de energizar a bomba pela primeira vez — o ESP32 precisa estar rodando a FSM (E9 Boot Seguro) antes do disjuntor ir para ON.
+11. [ ] Ligue o disjuntor. Verifique no log/Home Assistant: tensão das boias, estado da FSM (deve entrar em E0 Standby ou E1 conforme o nível), tensão de rede e corrente no PZEM.
+12. [ ] Use o botão **"Testar Bomba (Medir Corrente)"** do Home Assistant (roda a bomba por 10 s a partir do Standby) para calibrar os limiares `Corrente Máxima` e `Corrente Mínima` (menu de números do dispositivo) com a corrente real medida, em vez de confiar só nos defaults de fábrica (3.0 A / 0.5 A).
 
 ---
 
@@ -205,8 +203,8 @@ Ver a lista completa com quantidades e observações no [Memorial Descritivo, se
 - 2× boia reed switch + resistores 1 kΩ / 4.7 kΩ / 10 kΩ (EOL)
 - Disjuntor 6–10 A curva C
 - Fonte trilho DIN 5 V/2 A
-- ESP32-C3 + YYNMOS-4 (4 canais)
-- Módulo relé 5 V 1 canal + Contator monofásico 12 A AC-3 (bobina 220 V)
+- ESP32-C3 + YYNMOS-4 (4 canais, só 3 em uso — LED RGB)
+- Módulo relé 5 V 1 canal, com optoacoplador (jumper JD-VCC) + Contator monofásico 12 A AC-3 (bobina 220 V)
 - PZEM-004T 10 A (shunt interno)
 - Capacitor cerâmico 100 nF + resistor pull-up 3.3 kΩ
 - Supressor de surto (snubber RC ou varistor 275 V)
