@@ -1,38 +1,71 @@
 # =====================================================================
 #  Caixa D'Água — card em produção (dashboard "Casa RLIGHT")
 #
-#  JÁ APLICADO AO VIVO (WS lovelace/config/save) em 2026-07-14 — este
+#  JÁ APLICADO AO VIVO (WS lovelace/config/save) em 2026-07-21 — este
 #  arquivo é o registro do que está rodando, não uma proposta.
 #  Backups do config anterior salvos localmente durante a sessão antes
 #  de cada gravação (não versionados aqui, ficaram no scratchpad).
-#
-#  NÃO TESTADO VISUALMENTE — não tenho como abrir um navegador na sua
-#  rede. Se o tamanho/posição não ficar bom, me diga o que ajustar
-#  (aspect_ratio, os "top"/"left" em % de cada elemento, o tamanho do
-#  botão em width/height e --mdc-icon-size).
 #
 #  Histórico do double_tap_action / layout deste card, mesma sessão:
 #    1. more-info (original, sem uso real)
 #    2. navigate -> subview "caixa-dagua-config" (antes do browser_mod)
 #    3. call-service browser_mod.popup, ainda no mushroom-template-card
 #       inteiro (compromisso: só dava pra abrir com duplo-clique)
-#    4. ESTA VERSÃO: virou "picture-elements" com 3 zonas de clique
-#       independentes, exatamente como combinado — sem duplo-clique.
+#    4. picture-elements com 3 zonas de clique independentes — sem
+#       duplo-clique, mas o fundo invisível usava "type: icon".
+#    5. BUG #1: clique só funcionava no centro exato do cartão. Causa:
+#       "icon" redimensiona o CONTAINER com width/height, mas o glifo em
+#       si (a hitbox de verdade) fica preso no --mdc-icon-size padrão.
+#    6. BUG #2 (tentativa "type: image"): abria "Nenhuma entidade
+#       fornecida para a caixa de diálogo de mais informações" em vez do
+#       popup — o <hui-image> interno do HA tem clique-pra-mais-
+#       informações embutido (pensado pra câmeras) que ignora o
+#       tap_action customizado quando não há "entity".
+#    7. Tentativa "type: action-button" chamando browser_mod.popup —
+#       também não abriu nada.
+#    8. DIAGNÓSTICO FINAL (2026-07-21): não era bug do card. Disparei
+#       browser_mod.popup DIRETO pela API (bypassando o card
+#       inteiramente) e nada apareceu em Mac/Safari, iPhone nem Samsung.
+#       O registro de navegadores do browser_mod nesse HA está zerado
+#       desde a instalação (2026-07-20) — a integração nunca chegou a
+#       registrar um navegador sequer. Ou seja: o popup NUNCA funcionou,
+#       em nenhuma tentativa anterior — o problema era o browser_mod em
+#       si, não a config do card.
+#    9. ESTA VERSÃO: abandona browser_mod. Fundo voltou a "type: icon"
+#       (mecanismo confirmado funcional — é o que o botão redondo #3
+#       também usa) com "--mdc-icon-size: 100%" pra maximizar a hitbox,
+#       e o tap_action virou "navigate" pra uma VIEW dedicada
+#       (subview: true) no mesmo dashboard "Casa RLIGHT", em vez de um
+#       popup flutuante — zero dependência externa, 100% nativo do HA.
+#       A definição dessa view está no 2º documento YAML deste arquivo
+#       (depois do "---" no final), só como registro — ela é aplicada
+#       separadamente em lovelace/config/save, não faz parte deste card.
 # =====================================================================
 type: picture-elements
-# imagem 1x1 transparente — só existe pra picture-elements aceitar a
-# config; aspect_ratio abaixo é quem realmente define a proporção do
-# cartão (a imagem em si nunca aparece).
-image: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=
-aspect_ratio: "65%"
+# A imagem só existe pra picture-elements aceitar a config; aspect_ratio
+# abaixo é quem realmente define a proporção do cartão.
+# BUG (2026-07-22): picture-elements pinta um fundo PRETO fixo por trás
+# da imagem, não-tema-aware — mesmo com a imagem transparente e mesmo
+# tentando `card_mod` sobrescrevendo `ha-card { background: ... }` (não
+# funciona: confirmado pela comunidade HA que o fundo preto é do
+# elemento de imagem interno, não do ha-card). Ficava destoando dos
+# cartões vizinhos (brancos) no tema claro. FIX: em vez de transparente,
+# a imagem agora é 1x1 SÓLIDA branca (== var(--card-background-color)
+# do tema claro padrão) — pinta o próprio fundo em vez de deixar o
+# preto do componente aparecer. dark_mode_image é a mesma ideia pro
+# tema escuro padrão do HA (~#1c1c1c). Se usar um tema custom com cores
+# de card diferentes, troque esses dois PNGs pra combinar.
+image: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4////fwAJ+wP9KobjigAAAABJRU5ErkJggg==
+dark_mode_image: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGOQkZH5DwACAAFUIigVtAAAAABJRU5ErkJggg==
+aspect_ratio: "79%"
 
 elements:
   # -------------------------------------------------------------
-  # 1) FUNDO — invisível (opacity 0), cobre o cartão inteiro.
+  # 1) FUNDO — invisível, cobre o cartão inteiro.
   #    É o PRIMEIRO elemento da lista, então fica por BAIXO do botão
   #    redondo (adicionado depois = renderizado por cima = ganha o
   #    clique na própria área). Clicar em qualquer lugar fora do botão
-  #    cai aqui e abre o popup.
+  #    cai aqui e navega pra view de configuração (ver item 9 acima).
   # -------------------------------------------------------------
   - type: icon
     icon: mdi:water
@@ -41,41 +74,11 @@ elements:
       left: 50%
       width: 100%
       height: 100%
+      "--mdc-icon-size": 100%
       opacity: 0
     tap_action:
-      action: call-service
-      service: browser_mod.popup
-      data:
-        title: "Configuração — Caixa D'Água"
-        dismissable: true
-        content:
-          type: vertical-stack
-          cards:
-            - type: entities
-              title: Calibração de Segurança
-              entities:
-                - entity: number.caixa_d_agua_tempo_maximo_da_bomba_inching
-                  name: "Tempo máximo da bomba (inching)"
-                - entity: number.caixa_d_agua_corrente_maxima_rotor_preso
-                  name: "Corrente máxima (rotor preso)"
-                - entity: number.caixa_d_agua_corrente_minima_bomba_a_seco
-                  name: "Corrente mínima (bomba a seco)"
-            - type: entities
-              title: Teste Manual da Bomba
-              entities:
-                - entity: button.caixa_d_agua_testar_bomba_medir_corrente
-                  name: "Testar bomba (10s)"
-                - entity: sensor.caixa_d_agua_corrente_de_partida_teste
-                  name: "Corrente de partida (último teste)"
-                - entity: sensor.caixa_d_agua_corrente_de_regime_teste
-                  name: "Corrente de regime (último teste)"
-            - type: entities
-              title: Diagnóstico
-              entities:
-                - entity: sensor.caixa_d_agua_ultima_ocorrencia
-                  name: "Última ocorrência"
-                - entity: sensor.caixa_d_agua_nivel_da_caixa
-                  name: "Nível da caixa"
+      action: navigate
+      navigation_path: /casa-rlight/caixa-dagua-config
 
   # -------------------------------------------------------------
   # 2) TEXTO DO ESTADO DA FSM — pointer-events: none, não compete com
@@ -128,6 +131,7 @@ elements:
   # -------------------------------------------------------------
   - type: state-icon
     entity: light.caixa_d_agua_led_botao_cozinha
+    icon: mdi:power
     tap_action:
       action: call-service
       service: button.press
@@ -157,7 +161,50 @@ grid_options:
 
 # ---------------------------------------------------------------------
 # NOTA sobre os entity_id: os 3 number + o button de teste + os 2
-# sensores de teste ainda NÃO existem no HA (só existirão depois que
-# você regravar o ESP32 com o caixa-dagua.yaml atualizado). Confirme em
-# Ferramentas do Desenvolvedor → Estados depois do primeiro boot.
+# sensores de teste já existem no HA (ESP32 regravado com este
+# caixa-dagua.yaml em 2026-07-21). Se algum entity_id não bater, confira
+# em Ferramentas do Desenvolvedor → Estados.
 # =====================================================================
+
+---
+# =====================================================================
+#  View de configuração — "casa-rlight" dashboard, path caixa-dagua-config
+#
+#  JÁ APLICADA AO VIVO em 2026-07-21 (mesma sessão do card acima).
+#  Não é uma card config — é a VIEW inteira (subview: true, igual ao
+#  padrão já usado pela view "Impressora" / impressora-detalhe nesse
+#  mesmo dashboard). Chegou aqui pelo tap_action "navigate" do elemento
+#  de fundo do card (item 9 do histórico acima), depois que o
+#  browser_mod se provou não-funcional neste HA (zero navegadores
+#  registrados desde a instalação — ver diagnóstico no card acima).
+# =====================================================================
+title: "Config. Caixa D'Água"
+path: caixa-dagua-config
+subview: true
+type: masonry
+cards:
+  - type: entities
+    title: Calibração de Segurança
+    entities:
+      - entity: number.caixa_d_agua_tempo_maximo_da_bomba_inching
+        name: "Tempo máximo da bomba (inching)"
+      - entity: number.caixa_d_agua_corrente_maxima_rotor_preso
+        name: "Corrente máxima (rotor preso)"
+      - entity: number.caixa_d_agua_corrente_minima_bomba_a_seco
+        name: "Corrente mínima (bomba a seco)"
+  - type: entities
+    title: Teste Manual da Bomba
+    entities:
+      - entity: button.caixa_d_agua_testar_bomba_medir_corrente
+        name: "Testar bomba (10s)"
+      - entity: sensor.caixa_d_agua_corrente_de_partida_teste
+        name: "Corrente de partida (último teste)"
+      - entity: sensor.caixa_d_agua_corrente_de_regime_teste
+        name: "Corrente de regime (último teste)"
+  - type: entities
+    title: Diagnóstico
+    entities:
+      - entity: sensor.caixa_d_agua_ultima_ocorrencia
+        name: "Última ocorrência"
+      - entity: sensor.caixa_d_agua_nivel_da_caixa
+        name: "Nível da caixa"

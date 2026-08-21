@@ -20,9 +20,21 @@ substitutions:
   pino_led_r: GPIO4       # canal 1 do YYNMOS-4
   pino_led_g: GPIO5       # canal 2 do YYNMOS-4
   pino_led_b: GPIO6       # canal 3 do YYNMOS-4
-  pino_rele: GPIO7        # -> módulo relé 5V (IN, ativo em LOW) -> contator
+  pino_rele: GPIO7        # -> módulo relé 5V (IN, ativo em HIGH) -> contator
   pino_uart_tx: GPIO21    # -> RX do PZEM-004T
   pino_uart_rx: GPIO20    # <- TX do PZEM-004T
+
+  # Expansão — sensores de porta (microswitches, contato seco).
+  # GPIO3 e GPIO10 são pinos limpos. GPIO2/9 são pinos de strapping que
+  # decidem o modo de boot (SPI vs Download) — evitados de propósito, porque
+  # um contato fechado bem no instante do boot poderia mudar esse modo.
+  # GPIO8 também é strapping, mas só controla se a ROM imprime o log de boot
+  # (cosmético) — não decide o modo. Ainda NÃO TESTADO com o contato fechado
+  # no boot: ver checklist da seção 9 do MANUAL-FIACAO.md antes de fixar a
+  # fiação definitiva.
+  pino_grade_trava_1: GPIO3   # microswitch 1 — lingueta da fechadura da grade
+  pino_grade_trava_2: GPIO8   # microswitch 2 — idem (pino de strapping, ver acima)
+  pino_porta_cozinha: GPIO10  # microswitch — porta de madeira da cozinha
 
   # ------------- CALIBRAÇÃO (ajustar na instalação) -------------
   # Matriz de boias SUPERVISIONADA (laço com resistor de fim de linha):
@@ -459,6 +471,62 @@ binary_sensor:
   - platform: status
     name: "Status Wi-Fi"
 
+  # ---- Grade de serviço: 2 microswitches confirmam que a lingueta da
+  # fechadura elétrica realmente avançou (não só que a porta encostou).
+  # Contato NA (normally open), fecha para GND quando a lingueta empurra o
+  # microswitch. SEM `inverted` de propósito: pino em repouso (pull-up,
+  # HIGH) = "aberta/não confirmada" — cabo cortado ou desconectado nunca
+  # aparenta "trancada". Mesma filosofia de fail-safe da matriz de boias.
+  # Ver MANUAL-FIACAO.md seção 9 (fiação) e MEMORIAL-DESCRITIVO.md 4.3
+  # (por que essa polaridade, não a oposta).
+  - platform: gpio
+    id: grade_trava_1
+    name: "Grade Trava 1"
+    device_class: lock
+    pin:
+      number: ${pino_grade_trava_1}
+      mode:
+        input: true
+        pullup: true
+    filters:
+      - delayed_on: 50ms
+      - delayed_off: 50ms
+
+  - platform: gpio
+    id: grade_trava_2
+    name: "Grade Trava 2"
+    device_class: lock
+    pin:
+      number: ${pino_grade_trava_2}
+      mode:
+        input: true
+        pullup: true
+    filters:
+      - delayed_on: 50ms
+      - delayed_off: 50ms
+
+  # Combinada: só reporta "trancada" (off) se as DUAS lingueta confirmarem —
+  # qualquer uma sozinha em "aberta" já é motivo de alerta na grade.
+  - platform: template
+    name: "Grade Confirmada Trancada"
+    device_class: lock
+    lambda: return id(grade_trava_1).state || id(grade_trava_2).state;
+
+  # ---- Porta de madeira da cozinha — vias 7/8 do mesmo UTP do botão/LED,
+  # até então não usadas (ver MANUAL-FIACAO.md seção 5 e 9). ----
+  - platform: gpio
+    id: porta_cozinha
+    name: "Porta Cozinha"
+    device_class: door
+    pin:
+      number: ${pino_porta_cozinha}
+      mode:
+        input: true
+        pullup: true
+    filters:
+      - delayed_on: 50ms
+      - delayed_off: 50ms
+
 # =====================================================================
 #  SENSORES
 # =====================================================================
@@ -637,17 +705,16 @@ sensor:
 # =====================================================================
 switch:
   # Relé: módulo pronto 5V ligado direto no ESP32 (sem passar pelo YYNMOS-4).
-  # Módulo é ativo em LOW (trigger jumper em "L"): IN em GND liga o relé.
-  # inverted:true faz turn_on() puxar o GPIO para LOW e turn_off() para HIGH.
-  # Bônus de segurança: o pull-up de IN do próprio módulo mantém o relé
-  # DESLIGADO enquanto o GPIO estiver flutuando (antes do ESPHome assumir
-  # o pino no boot) — reforça o ALWAYS_OFF abaixo. Interno: SÓ a FSM comanda
-  # a bomba. ALWAYS_OFF: boot cru nunca religa — quem decide é a E9 (boot_seguro).
+  # Módulo é ativo em HIGH (trigger jumper em "H"): GPIO7 em nível ALTO liga
+  # o relé — por isso SEM inverted (turn_on() já manda HIGH direto).
+  # Confirme no datasheet do seu módulo o estado padrão do IN quando o GPIO
+  # está flutuando (antes do ESPHome assumir o pino no boot) — idealmente ele
+  # mantém o relé desligado nesse instante, reforçando o ALWAYS_OFF abaixo.
+  # Interno: SÓ a FSM comanda a bomba. ALWAYS_OFF: boot cru nunca religa —
+  # quem decide é a E9 (boot_seguro).
   - platform: gpio
     id: rele_bomba
-    pin:
-      number: ${pino_rele}
-      inverted: true
+    pin: ${pino_rele}
     restore_mode: ALWAYS_OFF
     internal: true
 

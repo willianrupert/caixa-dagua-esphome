@@ -102,7 +102,7 @@ stateDiagram-v2
 CISTERNA                    QUADRO DE COMANDO                     COZINHA
 ┌──────────┐   220V   ┌──────────────────────────────┐   UTP    ┌─────────┐
 │ Bomba    │◄─────────│ Disjuntor → Contator ← Relé   │─────────►│ Botão   │
-│ BSCA2    │          │              ▲        ▲       │  6 vias  │ inox    │
+│ BSCA2    │          │              ▲        ▲       │  8 vias  │ inox    │
 │ 1/4 HP   │          │           PZEM-004T   │       │          │ LED RGB │
 └──────────┘          │              ▼     ESP32-C3   │          └─────────┘
                       │  UART ─► ESP32-C3 ◄─ ADC      │

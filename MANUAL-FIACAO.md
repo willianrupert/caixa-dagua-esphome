@@ -38,19 +38,23 @@ REDE 220V ──[disjuntor]──┤                                            
                          │        │  │  │                              │  │
                          └────────┼──┼──┼──────────────────────────────┼──┘
                                   │  │  │                               │
-                          UTP (6 vias)                            L' ──┴──► BOMBA (fase)
+                          UTP (8 vias)                            L' ──┴──► BOMBA (fase)
                                   │                                N' ─────► BOMBA (neutro)
                                   ▼
                     COZINHA: botão inox + LED RGB anodo comum
+                             + microswitch da porta de madeira
 
                     CAIXA SUPERIOR: 2 boias reed + R 1k/4.7k/10k(EOL)
                     2 fios ────────────────────────► GPIO0 (com pull-up 3.3k
                                                        no quadro + cap 100nF)
+
+                    GRADE DE SERVIÇO: 2 microswitches na fechadura elétrica
+                    cabo 3 vias ────────────────────► GPIO3 / GPIO8 (seção 9)
 ```
 
 - **PZEM-004T** mede a corrente **em série** na fase (L) — a fase passa por dentro do módulo (bornes IN→OUT), não é grampo externo (shunt interno).
 - **YYNMOS-4** é uma chave *low-side* (liga pelo lado do GND): sinal ALTO do ESP32 no canal correspondente fecha aquele canal para o GND. Por isso a lógica de wiring do LED usa **anodo comum em +5V fixo** e cada cor é puxada para baixo pelo canal. Só os canais 1–3 são usados (LED RGB) — o canal 4 não é mais usado.
-- O **relé** é um módulo pronto 5 V ligado **direto no GPIO7 do ESP32** (sem passar pelo YYNMOS-4), porque o ESP32 sozinho não chaveia 220 V — ele aciona o relé de baixa potência, que por sua vez aciona a **bobina do contator**, que é quem efetivamente liga a bomba. O módulo é *ativo em LOW* (trigger jumper em "L"): o ESPHome usa `inverted: true` nesse pino, então o relé liga quando o GPIO vai para GND.
+- O **relé** é um módulo pronto 5 V ligado **direto no GPIO7 do ESP32** (sem passar pelo YYNMOS-4), porque o ESP32 sozinho não chaveia 220 V — ele aciona o relé de baixa potência, que por sua vez aciona a **bobina do contator**, que é quem efetivamente liga a bomba. O módulo é *ativo em HIGH* (trigger jumper em "H"): o GPIO7 em nível ALTO liga o relé diretamente, sem inversão no ESPHome.
 
 ---
 
@@ -71,7 +75,7 @@ REDE 220V ──[disjuntor]──┤                                            
 
 **Módulo relé:**
 - Alimentação: VCC 5 V (fonte DIN) + GND comum com o ESP32. Se o módulo tiver jumper **JD-VCC** (optoacoplador), mantenha-o ligado ao VCC — o projeto usa uma única fonte 5 V para toda a baixa tensão (ver seção 6); isolamento galvânico de verdade exigiria uma segunda fonte dedicada só ao JD-VCC, o que não faz parte deste BOM.
-- Sinal (IN): vem **direto do GPIO7 do ESP32** (nível 3.3 V — o módulo aceita). Confira o jumper de trigger do módulo: este projeto assume **ativo em LOW** (`inverted: true` no ESPHome). Se o seu módulo estiver no modo "H" (ativo em HIGH), troque o jumper para "L" ou remova o `inverted: true` do YAML — mas teste com multímetro/LED antes de ligar o contator (item 9 da seção 7).
+- Sinal (IN): vem **direto do GPIO7 do ESP32** (nível 3.3 V — o módulo aceita). Confira o jumper de trigger do módulo: este projeto assume **ativo em HIGH** (jumper "H", sem `inverted` no ESPHome). Se o seu módulo estiver no modo "L" (ativo em LOW), troque o jumper para "H" ou adicione `inverted: true` no `pin:` do YAML — mas teste com multímetro/LED antes de ligar o contator (item 9 da seção 7).
 - Contato de potência (COM/NA): em série com a fase que alimenta a bobina do contator (passo acima).
 
 > ⚠️ **Antes de energizar de vez:** com o disjuntor desligado, meça continuidade da bobina do contator (deve ter uma resistência baixa e finita — nunca aberta nem curto) e confira visualmente que L e N não estão trocados nos bornes do PZEM.
@@ -89,11 +93,18 @@ Tabela oficial de pinos (igual ao `substitutions:` do YAML — se mudar aqui, mu
 | `pino_led_r` | GPIO4 | YYNMOS-4, canal 1 (IN1) | Saída PWM |
 | `pino_led_g` | GPIO5 | YYNMOS-4, canal 2 (IN2) | Saída PWM |
 | `pino_led_b` | GPIO6 | YYNMOS-4, canal 3 (IN3) | Saída PWM |
-| `pino_rele` | GPIO7 | Módulo relé 5V, pino **IN** (direto, sem passar pelo YYNMOS-4) | Saída digital, ativa em LOW (`inverted: true`) |
+| `pino_rele` | GPIO7 | Módulo relé 5V, pino **IN** (direto, sem passar pelo YYNMOS-4) | Saída digital, ativa em HIGH (sem `inverted`) |
 | `pino_uart_tx` | GPIO21 | PZEM-004T, **RX** | Saída serial |
 | `pino_uart_rx` | GPIO20 | PZEM-004T, **TX** | Entrada serial |
+| `pino_grade_trava_1` | GPIO3 | Microswitch 1, lingueta da grade | Entrada digital (pull-up interno) |
+| `pino_grade_trava_2` | GPIO8 | Microswitch 2, lingueta da grade | Entrada digital (pull-up interno) — **pino de strapping, ver seção 9** |
+| `pino_porta_cozinha` | GPIO10 | Microswitch, porta de madeira da cozinha (via UTP) | Entrada digital (pull-up interno) |
 
 > TX do ESP32 vai no RX do PZEM e vice-versa — é cruzado, como qualquer UART ponto-a-ponto.
+>
+> Os 3 pinos de porta usam a mesma convenção de contato seco do botão
+> (pull-up interno, fecha para GND), mas **sem** `inverted` — polaridade
+> deliberadamente oposta à do botão. Explicação completa na seção 9.
 
 **YYNMOS-4 — alimentação:**
 - VCC: 5 V (fonte DIN)
@@ -155,7 +166,8 @@ Um único cabo de rede (Cat5e/Cat6) liga o quadro à cozinha, usando **6 das 8 v
 | 4 | Cátodo B | YYNMOS-4 OUT3 |
 | 5 | Contato seco do botão — GND | GND comum |
 | 6 | Contato seco do botão — sinal | GPIO1 do ESP32 |
-| 7, 8 | Não usadas | — |
+| 7 | Contato seco da porta da cozinha — GND | GND comum |
+| 8 | Contato seco da porta da cozinha — sinal | GPIO10 do ESP32 (`pino_porta_cozinha`) |
 
 - Botão: pulsador antivandalismo inox 19–22 mm, **momentâneo** (sem trava), LED RGB integrado **anodo comum**, 3–6 V.
 - Use conectores RJ45 fêmea/macho nas duas pontas (quadro e cozinha) ou emende direto nos bornes — mas mantenha o par de fios do botão (vias 5/6) junto (par trançado), para reduzir ruído no clique.
@@ -185,7 +197,7 @@ Com o disjuntor **ainda desligado**:
 6. [ ] Snubber/varistor instalado nos bornes A1/A2 do contator.
 7. [ ] Fiação de 220 V fisicamente separada da fiação de sinal dentro do quadro.
 8. [ ] GND comum de todo o lado de baixa tensão é um nó único, sem contato com o neutro de 220 V.
-9. [ ] Jumper de trigger do módulo relé confirmado em **"L" (ativo em LOW)** — ou o YAML ajustado se o seu módulo só tiver "H".
+9. [ ] Jumper de trigger do módulo relé confirmado em **"H" (ativo em HIGH)** — ou o YAML ajustado (`inverted: true`) se o seu módulo só tiver "L".
 
 Depois disso:
 
@@ -209,3 +221,96 @@ Ver a lista completa com quantidades e observações no [Memorial Descritivo, se
 - Capacitor cerâmico 100 nF + resistor pull-up 3.3 kΩ
 - Supressor de surto (snubber RC ou varistor 275 V)
 - Botão inox antivandalismo com LED RGB anodo comum + cabo UTP Cat5e/6
+- 3× microswitch (2 grade + 1 porta cozinha) + cabo 3 vias até a grade
+
+---
+
+## 9. Expansão — Sensores de Porta (Microswitches)
+
+Adiciona 3 entradas digitais simples ao mesmo quadro: 2 microswitches na
+grade de serviço (confirmam que a lingueta da fechadura elétrica realmente
+avançou) e 1 na porta de madeira da cozinha. Não mexe na FSM da bomba — são
+`binary_sensor` independentes, só para observabilidade no Home Assistant.
+
+### 9.1 Por que a polaridade é o oposto do botão
+
+O botão usa `inverted: true` porque o evento que importa é o **clique**
+(pino LOW = "pressionado" = ON). Aqui o que importa é o **repouso**: cada
+switch é NA (normally open) e fecha para GND quando **atuado** — lingueta
+avançada na grade, ou porta encostada no batente/marco na cozinha.
+
+Sem `inverted`, o `binary_sensor` fica assim:
+
+| Situação física | Pino | Estado ESPHome | Semântica HA (`device_class: lock`/`door`) |
+|---|---|---|---|
+| Lingueta avançada / porta fechada (switch atuado) | LOW (GND) | `off` | Trancada / Fechada |
+| Lingueta recuada / porta aberta (switch solto) | HIGH (pull-up) | `on` | Aberta / Não confirmada |
+| **Cabo cortado ou switch desconectado** | HIGH (pull-up) | `on` | **Aberta / Não confirmada** |
+
+A terceira linha é o ponto: um cabo rompido cai no mesmo estado de "não
+confirmada" que a porta genuinamente aberta — nunca no de "trancada". É a
+mesma filosofia de fail-safe da matriz de boias (seção 4), só que aqui via
+polaridade do pull-up em vez de um laço EOL dedicado. Não há resistor de
+fim de linha nestes 3 sinais — um corte no meio do cabo também lê como
+"aberta", então o efeito prático de segurança é o mesmo sem o custo de mais
+2 resistores e um canal ADC por switch.
+
+### 9.2 Grade de serviço — 2 microswitches, cabo novo
+
+Os dois microswitches ficam montados na própria fechadura elétrica, cada um
+posicionado para ser pressionado pela lingueta quando ela avança até a
+posição travada — não pela porta encostando no marco. Isso é o que garante
+detectar o caso real que motivou o pedido: a fechadura "comandada" para
+travar mas a lingueta não assentou (desalinhamento, sujeira, o que for).
+
+Cabo novo, 3 vias, do quadro até a grade (par trançado ou cabo de alarme
+2P+T já resolve; **não** precisa ser blindado):
+
+| Via | Função | Vai para (no quadro) |
+|---|---|---|
+| 1 | GND comum | GND comum |
+| 2 | Sinal Trava 1 | GPIO3 (`pino_grade_trava_1`) |
+| 3 | Sinal Trava 2 | GPIO8 (`pino_grade_trava_2`) |
+
+Se o trecho até a grade for longo ou correr perto de fiação de 220 V,
+considere reforçar cada sinal com um pull-up externo de 10 kΩ (3,3 V) +
+capacitor cerâmico 100 nF (GND) no lado do quadro — o pull-up interno do
+ESP32-C3 (~45 kΩ) é fraco e mais sensível a ruído em cabos longos. Não é
+obrigatório para um cabo curto dentro de casa.
+
+> ⚠️ **GPIO8 é pino de strapping** (controla se a ROM imprime o log de boot
+> — não decide o modo SPI/Download, que é o GPIO9, esse sim evitado de
+> propósito). Efeito esperado é só cosmético, mas **ainda não foi testado**
+> com o contato fechado no instante do boot. Antes de fixar a fiação
+> definitiva: feche manualmente o microswitch 2, dê power-cycle no ESP32 e
+> confirme no log/Home Assistant que ele sobe normalmente (FSM entra em E0
+> ou E1, não trava em bootloop). Se algo der errado, troque
+> `pino_grade_trava_2` para outro GPIO livre do seu módulo específico — a
+> troca é só no `substitutions:` do YAML.
+
+### 9.3 Porta da cozinha — reaproveita o UTP existente
+
+Nenhum cabo novo: o UTP que já vai do quadro até a cozinha (seção 5) tem 2
+vias sobrando (7 e 8). O microswitch fica no batente da porta de madeira,
+posicionado para ser pressionado quando a porta fecha.
+
+| Via (UTP) | Função | Vai para (no quadro) |
+|---|---|---|
+| 7 | Contato seco — GND | GND comum |
+| 8 | Contato seco — sinal | GPIO10 (`pino_porta_cozinha`) |
+
+Confirme com multímetro, no switch isolado (antes de plugar no ESP32), que
+a resistência entre as vias 7/8 cai a praticamente zero quando pressionado
+e volta a infinita quando solto — mesmo teste já feito para o botão na
+seção 5.
+
+### 9.4 Checklist desta expansão
+
+1. [ ] Grade: cabo de 3 vias puxado, sem correr junto de fiação de 220 V.
+2. [ ] Multímetro: cada microswitch da grade fecha só quando a lingueta
+   correspondente avança até a posição travada (não antes).
+3. [ ] Cozinha: continuidade das vias 7/8 do UTP confirmada ponta a ponta.
+4. [ ] GPIO8 testado com o contato fechado no boot (ver 9.2) antes de
+   fixar a fiação definitiva.
+5. [ ] Após gravar o firmware: os 3 (ou 4, com a combinada) entities
+   aparecem no Home Assistant e mudam de estado ao atuar cada switch à mão.
