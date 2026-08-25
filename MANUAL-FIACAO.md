@@ -247,9 +247,20 @@ Um único cabo de rede (Cat5e/Cat6) liga o quadro à cozinha, usando as **8 vias
 
 | Item | Alimenta |
 |---|---|
-| Fonte chaveada trilho DIN 5 V / 2 A | ESP32-C3 (via 5V→3.3V do próprio módulo, ou pino 5V se disponível), YYNMOS-4, módulo relé, PZEM-004T (lado lógico), LED da cozinha (via anodo) |
+| Fonte Hi-Link 5 V / 1 A (módulo AC-DC, não trilho DIN) | ESP32-C3 (via 5V→3.3V do próprio módulo, ou pino 5V se disponível), YYNMOS-4, módulo relé, PZEM-004T (lado lógico), LED da cozinha (via anodo) |
 
 Todo o GND de baixa tensão (ESP32, YYNMOS-4, relé, PZEM lógico, boias, botão) deve ser **um único nó comum**. Não misture esse GND com o neutro (N) do lado de 220 V.
+
+> ⚠️ **Orçamento de corrente mais apertado que a fonte original (2A → 1A).**
+> Estimativa de consumo simultâneo no pior caso: ESP32-C3 com Wi-Fi ativo
+> (~100–150 mA em regime, picos de TX bem mais altos por microssegundos,
+> absorvidos pela capacitância da própria placa) + relé energizado (~80 mA)
+> + LED da cozinha em branco pleno (~60 mA) + PZEM lógico (~30–50 mA) — soma
+> em torno de 300–400 mA de regime, bem dentro de 1 A, mas sem a folga
+> generosa que 2 A dava. Os microswitches das portas **não** entram nessa
+> conta (pull-up interno do ESP32, consumo em µA). Meça a corrente real do
+> trecho 5V com tudo ligado (relé acionado + Wi-Fi ativo) antes de dar por
+> encerrado — mais um item pro checklist da seção 7.
 
 ---
 
@@ -272,6 +283,7 @@ Depois disso:
 10. [ ] Grave o firmware via USB (`esphome run caixa-dagua.yaml --device /dev/cu.usbmodemXXXX`) **antes** de energizar a bomba pela primeira vez — o ESP32 precisa estar rodando a FSM (E9 Boot Seguro) antes do disjuntor ir para ON.
 11. [ ] Ligue o disjuntor. Verifique no log/Home Assistant: tensão das boias, estado da FSM (deve entrar em E0 Standby ou E1 conforme o nível), tensão de rede e corrente no PZEM.
 12. [ ] Use o botão **"Testar Bomba (Medir Corrente)"** do Home Assistant (roda a bomba por 10 s a partir do Standby) para calibrar os limiares `Corrente Máxima` e `Corrente Mínima` (menu de números do dispositivo) com a corrente real medida, em vez de confiar só nos defaults de fábrica (3.0 A / 0.5 A).
+13. [ ] Meça a corrente do trecho 5V (saída da fonte Hi-Link) com o relé acionado e o Wi-Fi ativo — confirme que fica confortavelmente abaixo de 1 A (ver seção 6).
 
 ---
 
@@ -282,9 +294,9 @@ Ver a lista completa com quantidades e observações no [Memorial Descritivo, se
 - Bomba Intech BSCA2 1/4 HP 220 V
 - 2× boia reed switch + resistores 1 kΩ / 4.7 kΩ / 10 kΩ (EOL)
 - Disjuntor 6–10 A curva C
-- Fonte trilho DIN 5 V/2 A
+- Fonte Hi-Link 5 V/1 A
 - ESP32-C3 + YYNMOS-4 (4 canais, só 3 em uso — LED RGB)
-- Módulo relé 5 V 1 canal, com optoacoplador (jumper JD-VCC) + Contator monofásico 12 A AC-3 (bobina 220 V)
+- Módulo relé 5 V 1 canal, com optoacoplador (jumper JD-VCC) + Contator monofásico 25 A AC-3 (bobina 220 V)
 - PZEM-004T 10 A (shunt interno)
 - Capacitor cerâmico 100 nF + resistor pull-up 3.3 kΩ
 - Supressor de surto (snubber RC ou varistor 275 V)

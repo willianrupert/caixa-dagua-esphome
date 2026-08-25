@@ -129,6 +129,26 @@ Se o sistema salvasse "bomba ligada" e religasse o relé direto no boot, haveria
 - **Capacitor cerâmico 100 nF** entre o pino ADC e GND para filtrar ruído do cabo.
 - **Histerese anti-marola:** mudança de nível só é aceita após **4 leituras consecutivas** (4 s) — evita que a ondulação da água na boia cause oscilação E2↔E3, piscadas no LED e gravações desnecessárias na flash.
 
+**Pendência — o "estado fantasma" (boia mínima presa) não é distinguível do
+crítico com os resistores atuais.** Existe uma 6ª combinação, fisicamente
+impossível em operação normal mas alcançável por defeito mecânico: mínima
+travada fechada (lodo/sujeira) enquanto a máxima lê aberta de verdade —
+1k ∥ 10k ≈ 909 Ω, **~0.71 V**. Avaliado e **não implementado**: 909 Ω fica
+próximo demais dos 762 Ω do crítico normal (diferença de ~90 mV) para
+separar com segurança usando resistores de tolerância padrão (±5%) — uma
+janela de detecção ali tem risco real de confundir as duas coisas nos dois
+sentidos: ler "crítico" de verdade como falha (trava a bomba à toa) ou ler
+o defeito mecânico como "crítico" normal (liga a bomba com a mínima
+mentindo). Hoje esse 6º caso cai silenciosamente em **Crítico (E2)**, que
+liga a bomba — na pior hipótese (máxima realmente aberta = caixa cheia ou
+enchendo, mínima travada mentindo "vazia"), o sistema pode ligar a bomba
+sem necessidade. Não é o cenário de transbordo que o inching (seção acima)
+já cobre, mas é uma lacuna real. Solução de verdade exigiria valores de
+resistor escolhidos com mais separação entre as 4 combinações possíveis
+(não só as 3 do caminho monotônico normal) — mudança de projeto, não de
+software, e não vale reabrir a caixinha já potada só por isso. Registrar
+para a próxima geração de sensores de nível.
+
 ### 4.2 Monitoramento de corrente (PZEM-004T)
 - PZEM-004T (versão 10A, shunt interno) na fase de 220 V da bomba; dados via serial (UART) para o ESP32.
 - **Blanking time de 5 s** na partida (cegueira de arranque) antes de validar corrente.
@@ -202,7 +222,7 @@ no [Manual de Fiação, seção 9](MANUAL-FIACAO.md#9-expansão--sensores-de-por
 | Qtd | Item | Observações |
 |---|---|---|
 | 1 | Disjuntor termomagnético monopolar 6A ou 10A, curva C | Dedicado ao circuito 220 V da bomba |
-| 1 | Fonte chaveada trilho DIN 5V / 2A | Alimenta ESP32, LEDs da cozinha e módulos |
+| 1 | Fonte Hi-Link 5V / 1A (módulo AC-DC) | Alimenta ESP32, LEDs da cozinha e módulos — ver Manual de Fiação seção 6 para o orçamento de corrente |
 
 **Processamento e Sinal:**
 | Qtd | Item | Observações |
@@ -214,7 +234,7 @@ no [Manual de Fiação, seção 9](MANUAL-FIACAO.md#9-expansão--sensores-de-por
 | Qtd | Item | Observações |
 |---|---|---|
 | 1 | Módulo relé 5 V 1 canal, com optoacoplador (jumper JD-VCC) | Recebe sinal direto do GPIO7 do ESP32 (IN ativo em HIGH); fecha o circuito AC da bobina do contator |
-| 1 | Contator monofásico 12A, categoria AC-3, bobina 220 V | Acionado pelo relé; é quem liga a bomba de fato |
+| 1 | Contator monofásico 25A, categoria AC-3, bobina 220 V | Acionado pelo relé; é quem liga a bomba de fato |
 
 **Telemetria e Filtros Passivos:**
 | Qtd | Item | Observações |
