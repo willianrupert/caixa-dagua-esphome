@@ -1,9 +1,9 @@
 # 💧 Caixa D'Água Inteligente
 
-**Controlador de bombeamento cisterna → caixa d'água com ESP32-C3 + ESPHome, projetado como um "tanque de guerra": imune a apagões, erros humanos e falhas de sensor.**
+**Controlador de bombeamento cisterna → caixa d'água com ESP32-S3 + ESPHome, projetado como um "tanque de guerra": imune a apagões, erros humanos e falhas de sensor.**
 
 ![ESPHome](https://img.shields.io/badge/ESPHome-firmware-blue?logo=esphome)
-![ESP32-C3](https://img.shields.io/badge/ESP32--C3-RISC--V-orange?logo=espressif)
+![ESP32-S3](https://img.shields.io/badge/ESP32--S3-Xtensa-orange?logo=espressif)
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-integrado-41BDF5?logo=homeassistant&logoColor=white)
 ![Licença](https://img.shields.io/badge/licen%C3%A7a-MIT-green)
 
@@ -104,8 +104,8 @@ CISTERNA                    QUADRO DE COMANDO                     COZINHA
 │ Bomba    │◄─────────│ Disjuntor → Contator ← Relé   │─────────►│ Botão   │
 │ BSCA2    │          │              ▲        ▲       │  8 vias  │ inox    │
 │ 1/4 HP   │          │           PZEM-004T   │       │          │ LED RGB │
-└──────────┘          │              ▼     ESP32-C3   │          └─────────┘
-                      │  UART ─► ESP32-C3 ◄─ ADC      │
+└──────────┘          │              ▼     ESP32-S3   │          └─────────┘
+                      │  UART ─► ESP32-S3 ◄─ ADC      │
 CAIXA SUPERIOR        │  (ESPHome, lógica local)      │
 ┌──────────┐  2 fios  └──────────────────────────────┘
 │ 2 boias + │◄────────────────┘
@@ -113,10 +113,10 @@ CAIXA SUPERIOR        │  (ESPHome, lógica local)      │
 └──────────┘
 ```
 
-- **ESP32-C3** (ESPHome) — cérebro local
+- **ESP32-S3** (ESPHome) — cérebro local
 - **PZEM-004T 10 A** — telemetria de corrente/tensão/energia via UART
 - **YYNMOS-4** — interface MOSFET: 3 canais para o LED RGB da cozinha (canal 4 não usado)
-- **Módulo relé 5 V (IN direto no GPIO7) → Contator 25 A AC-3** — cascata de acionamento da bomba 220 V
+- **Módulo relé 5 V (IN direto no GPIO21) → Contator 25 A AC-3** — cascata de acionamento da bomba 220 V
 - **2 boias reed + resistores 1 kΩ / 4.7 kΩ / 10 kΩ (EOL)** — nível em 2 fios, supervisionado
 
 O BOM completo, as tensões do divisor e todos os detalhes de engenharia estão no **[Memorial Descritivo](MEMORIAL-DESCRITIVO.md)**.

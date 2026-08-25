@@ -1,6 +1,6 @@
 # Memorial Descritivo — Sistema de Bombeamento Cisterna → Caixa D'água
 
-**Plataforma:** ESP32-C3 (conectado via USB) rodando **ESPHome**, integrado ao **Home Assistant**.
+**Plataforma:** ESP32-S3 (conectado via USB) rodando **ESPHome**, integrado ao **Home Assistant**.
 **Princípio de projeto:** lógica máxima no firmware, zero solda na eletrônica (bornes/trilho DIN), isolamento industrial e persistência de estado em memória não-volátil.
 
 ---
@@ -232,7 +232,7 @@ série entre si** — 5 switches físicos, mas só 3 sinais chegam ao ESP32, um
 por porta.
 
 Mesma convenção elétrica do botão (contato NA, pull-up interno do
-ESP32-C3), mas com a polaridade **oposta**: sem `inverted`. O botão precisa
+ESP32-S3), mas com a polaridade **oposta**: sem `inverted`. O botão precisa
 que "pressionado" vire `on` (é o evento); aqui o que importa é o **estado
 de repouso** — pino em pull-up (HIGH, sem nada puxando pra GND) já
 representa "aberta/não confirmada", que é exatamente o estado de um cabo
@@ -292,13 +292,13 @@ no [Manual de Fiação, seção 9](MANUAL-FIACAO.md#9-expansão--sensores-de-por
 **Processamento e Sinal:**
 | Qtd | Item | Observações |
 |---|---|---|
-| 1 | **ESP32-C3** (via USB, firmware ESPHome) | Cérebro local: FSM, leitura das boias, PWM dos LEDs |
+| 1 | **ESP32-S3** (via USB, firmware ESPHome) | Cérebro local: FSM, leitura das boias, PWM dos LEDs |
 | 1 | Placa interface MOSFET **YYNMOS-4** (4 canais, 3 em uso) | Recebe 3.3 V do ESP32, libera 5 V nos bornes. Canais 1–3: LED RGB da cozinha; canal 4 não é usado |
 
 **Potência e Acionamento (cascata):**
 | Qtd | Item | Observações |
 |---|---|---|
-| 1 | Módulo relé 5 V 1 canal, com optoacoplador (jumper JD-VCC) | Recebe sinal direto do GPIO7 do ESP32 (IN ativo em HIGH); fecha o circuito AC da bobina do contator |
+| 1 | Módulo relé 5 V 1 canal, com optoacoplador (jumper JD-VCC) | Recebe sinal direto do GPIO21 do ESP32 (IN ativo em HIGH); fecha o circuito AC da bobina do contator |
 | 1 | Contator monofásico 25A, categoria AC-3, bobina 220 V | Acionado pelo relé; é quem liga a bomba de fato |
 
 **Telemetria e Filtros Passivos:**
@@ -324,7 +324,7 @@ no [Manual de Fiação, seção 9](MANUAL-FIACAO.md#9-expansão--sensores-de-por
 | 1 | Microswitch (contato NA) | Porta de madeira da cozinha — montado no batente, atuado pelo fechamento da porta |
 | — | Cabo 2 vias (par trançado ou alarme) × 2 | Quadro → cada grade, curto (grades ficam perto do quadro) — 2 vias por grade, não 3: a série já fica do lado de fora |
 | — | Fiação da porta da cozinha | Reaproveita as 2 vias do UTP da cozinha até então não usadas (7 e 8) — nenhum cabo novo |
-| 2 (opcional) | Resistor 10 kΩ (pull-up externo) + Capacitor cerâmico 100 nF | Um por grade, só se o trecho for longo/ruidoso — o pull-up interno do ESP32-C3 basta para cabo curto. Ver Manual de Fiação 9.2 |
+| 2 (opcional) | Resistor 10 kΩ (pull-up externo) + Capacitor cerâmico 100 nF | Um por grade, só se o trecho for longo/ruidoso — o pull-up interno do ESP32-S3 basta para cabo curto. Ver Manual de Fiação 9.2 |
 
 ---
 
@@ -350,7 +350,7 @@ no [Manual de Fiação, seção 9](MANUAL-FIACAO.md#9-expansão--sensores-de-por
 - **Boias:** `adc` sensor no pino analógico com filtro `median`, histerese de 4 leituras e supervisão do laço EOL (faixas válidas + zonas de falha).
 - **PZEM-004T:** componente nativo `pzemac` (V3/Modbus) via UART.
 - **Sensores de porta (expansão):** 3 `binary_sensor: gpio` independentes (Grade Principal, Grade Secundária, Trava Madeira Cozinha), pull-up interno, contato NA, **sem** `inverted` — a polaridade oposta ao botão é deliberada, ver 4.3. Nas grades, os 2 microswitches ficam em série na própria fiação (não há `binary_sensor: template` combinando pinos — a série já faz o "os dois confirmam"). Não participam da FSM da bomba — são só observabilidade.
-- **Relé:** `switch: gpio` direto no GPIO7 → módulo relé 5V (IN ativo em HIGH, sem `inverted` no ESPHome — GPIO7 em nível ALTO já liga o relé), com `restore_mode: ALWAYS_OFF` (a E9 decide religar, nunca o boot cru). Confirme no datasheet do módulo o estado do IN com o GPIO flutuando no boot, antes do ESPHome assumir o pino — idealmente o relé fica desligado nesse instante, reforçando o `ALWAYS_OFF`.
+- **Relé:** `switch: gpio` direto no GPIO21 → módulo relé 5V (IN ativo em HIGH, sem `inverted` no ESPHome — GPIO21 em nível ALTO já liga o relé), com `restore_mode: ALWAYS_OFF` (a E9 decide religar, nunca o boot cru). Confirme no datasheet do módulo o estado do IN com o GPIO flutuando no boot, antes do ESPHome assumir o pino — idealmente o relé fica desligado nesse instante, reforçando o `ALWAYS_OFF`.
 - **Autonomia:** `reboot_timeout: 0s` em `wifi:` e `api:` — o chip jamais reinicia por falta de rede.
 - **Home Assistant:** expor estado da FSM (`text_sensor`), nível, "Última Ocorrência" e telemetria do PZEM; dois `button` template espelham os cliques físicos. Métricas de debug ficam **ocultas** no registro de entidades do HA (não no YAML). A lógica de segurança roda **100% local no ESP32**, independente do Wi-Fi/HA.
 

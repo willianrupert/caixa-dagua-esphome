@@ -1,6 +1,6 @@
 # =====================================================================
 #  SISTEMA DE BOMBEAMENTO CISTERNA -> CAIXA D'ÁGUA
-#  ESP32-C3 + ESPHome + Home Assistant
+#  ESP32-S3 + ESPHome + Home Assistant
 #
 #  Implementa a FSM do MEMORIAL-DESCRITIVO.md:
 #    E0 Standby | E1 Pré-partida | E2 Recalque Crítico
@@ -14,27 +14,40 @@
 # =====================================================================
 
 substitutions:
-  # ------------- PINOS (ESP32-C3) -------------
-  pino_adc_boias: GPIO0   # matriz das 2 boias (2 fios) — ADC1
-  pino_botao: GPIO1       # contato seco do botão da cozinha (via UTP)
-  pino_led_r: GPIO4       # canal 1 do YYNMOS-4
-  pino_led_g: GPIO5       # canal 2 do YYNMOS-4
-  pino_led_b: GPIO6       # canal 3 do YYNMOS-4
-  pino_rele: GPIO7        # -> módulo relé 5V (IN, ativo em HIGH) -> contator
-  pino_uart_tx: GPIO21    # -> RX do PZEM-004T
-  pino_uart_rx: GPIO20    # <- TX do PZEM-004T
+  # ------------- PINOS (ESP32-S3) -------------
+  # O projeto nasceu para ESP32-C3 e migrou para S3 em 2026-08-25, quando a
+  # placa que apareceu na bancada era S3. NÃO é só trocar o `board:` — o mapa
+  # inteiro mudou, porque o que é pino limpo no C3 não é no S3:
+  #
+  #   GPIO0  era o ADC das boias no C3. No S3 é STRAPPING de boot e costuma
+  #          estar ligado ao botão BOOT da placa. Saiu.
+  #   GPIO20 era o UART RX do PZEM no C3. No S3 é o D+ do USB nativo —
+  #          conflita com a própria gravação. Saiu (junto com GPIO19, o D-).
+  #   GPIO3  era a grade principal no C3. No S3 é strapping (seleção de
+  #          JTAG). Saiu.
+  #   GPIO8  era strapping no C3 (log de boot). No S3 é limpo — aqui melhora,
+  #          e a ressalva "não testado no boot" que existia some.
+  #
+  # Também evitados por princípio: GPIO26..37 (flash/PSRAM do módulo),
+  # GPIO43/44 (UART0 da ponte USB-serial), GPIO45/46 (strapping) e GPIO48
+  # (LED RGB embutido em boa parte das placas S3).
+  #
+  # ADC: no S3 só o ADC1 (GPIO1..GPIO10) funciona com o Wi-Fi ligado — o ADC2
+  # é disputado com o rádio. Por isso as boias têm que morar nessa faixa.
+  pino_adc_boias: GPIO4   # matriz das 2 boias (2 fios) — ADC1_CH3
+  pino_botao: GPIO5       # contato seco do botão da cozinha (via UTP)
+  pino_uart_tx: GPIO9     # -> RX do PZEM-004T
+  pino_uart_rx: GPIO10    # <- TX do PZEM-004T
+  pino_led_r: GPIO16      # canal 1 do YYNMOS-4 (pwm1)
+  pino_led_g: GPIO17      # canal 2 do YYNMOS-4 (pwm2)
+  pino_led_b: GPIO18      # canal 3 do YYNMOS-4 (pwm3)
+  pino_rele: GPIO21       # -> módulo relé 5V (IN, ativo em HIGH) -> contator
 
   # Expansão — sensores de porta (microswitches, contato seco).
-  # GPIO3 e GPIO10 são pinos limpos. GPIO2/9 são pinos de strapping que
-  # decidem o modo de boot (SPI vs Download) — evitados de propósito, porque
-  # um contato fechado bem no instante do boot poderia mudar esse modo.
-  # GPIO8 também é strapping, mas só controla se a ROM imprime o log de boot
-  # (cosmético) — não decide o modo. Ainda NÃO TESTADO com o contato fechado
-  # no boot: ver checklist da seção 9 do MANUAL-FIACAO.md antes de fixar a
-  # fiação definitiva.
-  pino_grade_principal: GPIO3    # 2 microswitches em série — grade principal do serviço
-  pino_grade_secundaria: GPIO8   # 2 microswitches em série — grade secundária (pino de strapping, ver acima)
-  pino_porta_cozinha: GPIO10     # 1 microswitch — porta de madeira da cozinha
+  # No S3 os três são pinos limpos, sem ressalva de strapping.
+  pino_grade_principal: GPIO6    # 2 microswitches em série — grade principal do serviço
+  pino_grade_secundaria: GPIO7   # 2 microswitches em série — grade secundária
+  pino_porta_cozinha: GPIO8      # 1 microswitch — porta de madeira da cozinha
 
   # ------------- CALIBRAÇÃO (ajustar na instalação) -------------
   # Matriz de boias SUPERVISIONADA (laço com resistor de fim de linha):
@@ -99,7 +112,7 @@ esphome:
       - script.execute: boot_seguro
 
 esp32:
-  board: esp32-c3-devkitm-1
+  board: esp32-s3-devkitc-1
   framework:
     type: esp-idf
 
