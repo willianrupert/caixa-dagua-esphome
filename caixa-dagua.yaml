@@ -41,17 +41,29 @@ substitutions:
   #   - Pull-up de 3.3kΩ do nó ADC para 3.3V (no quadro).
   #   - Resistor EOL de 10kΩ em paralelo com as boias (NO LADO DA CAIXA!) —
   #     é ele que torna o cabo rompido detectável.
-  #   - Boias FECHAM contato quando a água está ABAIXO delas.
-  # Tensões resultantes:
-  #   cabo ROMPIDO / sem boia (circuito aberto)  ~3.3V  -> FALHA SENSOR
-  #   ambas abertas (10kΩ)          = CHEIA        ~2.48V
-  #   só máx fechada (4.7k∥10k)     = INTERMEDIÁRIO ~1.62V
-  #   ambas fechadas (1k∥4.7k∥10k)  = CRÍTICO      ~0.62V
-  #   cabo em CURTO                               ~0.0V  -> FALHA SENSOR
+  #
+  # AS DUAS BOIAS TÊM LÓGICA OPOSTA — e isso é deliberado (2026-08-25):
+  #   - Boia MÍNIMA (1kΩ):  FECHA seca  (abre quando a água sobe até ela)
+  #   - Boia MÁXIMA (4.7kΩ): FECHA molhada (a orientação de transbordo, que é
+  #     requisito hidráulico da boia de cima e não se mexe)
+  # Não é descuido nem sobra de uma versão anterior: é essa oposição que faz
+  # cada estado ser dominado por um resistor DIFERENTE (1k, 10k, 4.7k∥10k) e
+  # garante folga de tensão entre eles. Com as duas na mesma lógica, dois
+  # estados normais caem a ~90mV um do outro e a leitura vira loteria.
+  #
+  # Tensões resultantes — repare que NÃO são monotônicas com o nível:
+  #   cabo ROMPIDO / sem boia (circuito aberto)  ~3.30V  -> FALHA SENSOR
+  #   só EOL (10kΩ)                 = INTERMEDIÁRIO ~2.48V
+  #   máx fechada (4.7k∥10k)        = CHEIA        ~1.62V
+  #   mín fechada (1k∥10k)          = CRÍTICO      ~0.71V
+  #   cabo em CURTO                               ~0.00V  -> FALHA SENSOR
+  # A ordem das comparações abaixo segue a TENSÃO, não o nível d'água — quem
+  # ler isto esperando "quanto mais cheio, mais tensão" erra o mapeamento.
   adc_sem_sensor_acima_de: "2.90"     # Volts — acima disso: rompido/sem boia
-  adc_cheia_acima_de: "2.10"          # Volts
-  adc_intermediario_acima_de: "1.10"  # Volts
+  adc_intermediario_acima_de: "2.05"  # Volts — acima disso (e abaixo de 2.90): INTERMEDIÁRIO
+  adc_cheia_acima_de: "1.15"          # Volts — acima disso (e abaixo de 2.05): CHEIA
   adc_curto_abaixo_de: "0.35"         # Volts — abaixo disso: cabo em curto
+                                      # (entre 0.35 e 1.15: CRÍTICO)
   sensor_falho_leituras: "15"         # leituras (1s) fora das faixas p/ declarar falha
 
   # Bomba Intech BSCA2 1/4 HP 220V — corrente máxima/mínima e o tempo máximo
@@ -623,10 +635,14 @@ sensor:
             }
             id(sensor_falho_contagem) = 0;
 
+            // Ordem por TENSÃO, não por nível: as boias têm lógica oposta
+            // (mínima fecha seca, máxima fecha molhada — ver substitutions),
+            // então a tensão NÃO cresce com o nível. Intermediário é o mais
+            // ALTO dos três (só o EOL no laço), crítico é o mais baixo.
             int bruto;
-            if (x > ${adc_cheia_acima_de})              bruto = 0;  // Cheia
-            else if (x > ${adc_intermediario_acima_de}) bruto = 1;  // Intermediário
-            else                                        bruto = 2;  // Crítico
+            if (x > ${adc_intermediario_acima_de})  bruto = 1;  // ~2.48V Intermediário
+            else if (x > ${adc_cheia_acima_de})     bruto = 0;  // ~1.62V Cheia
+            else                                    bruto = 2;  // ~0.71V Crítico
 
             // ----- Histerese: só aceita mudança após N leituras estáveis -----
             // Evita que a marola na boia (E2<->E3) pisque o LED e desgaste a
