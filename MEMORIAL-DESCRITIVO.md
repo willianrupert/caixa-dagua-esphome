@@ -103,6 +103,29 @@ Se o sistema salvasse "bomba ligada" e religasse o relé direto no boot, haveria
 | 9 | Falha corrente baixa (sem água) | **Azul piscando** |
 | 10 | Falha de contator (corrente fantasma) | **Branco piscando rápido** (300 ms) — desligue o disjuntor! |
 
+### 3.1 Varredura de matiz no boot
+
+Ao energizar, o botão varre 360° de matiz (~1,9 s) e se resolve na cor do
+estado que a rotina E9 decidir. Serve para duas coisas além do agrado:
+prova, num relance, que os três canais do LED estão vivos e na cor certa
+— um canal queimado ou um fio de catodo trocado aparece na hora, sem
+precisar forçar estado nenhum — e dá sinal visível de que a energia voltou.
+
+**Não custa tempo de boot.** Ela roda *dentro* dos 2 s que a E9 já gastava
+parada estabilizando a leitura do ADC (`boot_seguro` dispara o script e
+segue para o `delay`, sem bloquear). O tempo era o mesmo; antes não tinha
+o que mostrar.
+
+**Decoração nunca ganha do estado.** `goto_state` interrompe a animação
+(`script.stop`) antes de pintar qualquer cor. Sem isso, uma partida
+automática disparada pela primeira leitura do ADC — que acontece a ~1 s,
+antes da E9 concluir — ficaria escondida atrás do arco-íris ainda em curso.
+
+Implementação: 24 passos de 15°, com transição (75 ms) deliberadamente
+maior que o intervalo entre passos (70 ms), para que cada comando
+interrompa o fade anterior no meio. A cor nunca "chega e senta" — é
+movimento contínuo, não 24 saltos.
+
 ---
 
 ## 4. Sensores e Filtros

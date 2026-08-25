@@ -183,6 +183,12 @@ globals:
     restore_value: true
     initial_value: 'false'
 
+  # Passo da varredura de matiz do boot (0..PASSOS_BOOT-1)
+  - id: boot_anim_passo
+    type: int
+    restore_value: false
+    initial_value: '0'
+
   # Histerese do nível: candidato e contagem de leituras estáveis
   - id: nivel_candidato
     type: int
@@ -266,6 +272,13 @@ script:
           // Alarmes usam o efeito "pulse" (respiração de brilho, 4s de período)
           // sobre a MESMA cor sólida do estado — por isso a cor é escolhida uma
           // única vez abaixo e reaproveitada tanto no efeito quanto no sólido.
+          //
+          // A varredura de matiz do boot é decoração e SEMPRE perde para o
+          // estado: qualquer transição real a interrompe aqui, antes de pintar
+          // a cor. Sem isto, uma partida automática durante o boot ficaria
+          // escondida atrás do arco-íris ainda em curso.
+          id(animacao_boot).stop();
+
           const char *efeito = nullptr;
           if (novo == 5)      efeito = "Falha Branco";
           else if (novo == 6) efeito = "Falha Vermelho";
@@ -300,6 +313,56 @@ script:
           // --- Timers do novo estado ---
           if (novo == 1) id(pre_partida_timer).execute();
           if (novo == 4) id(sucesso_timer).execute();
+
+  # ---- Animação de boot: varredura de matiz até a cor do estado ----
+  # NÃO adiciona tempo ao boot. Ela cabe dentro dos 2s que o boot_seguro já
+  # gastava parado, estabilizando a leitura do ADC — o tempo era o mesmo, só
+  # não tinha o que mostrar. Termina em ~1.94s, uma folga antes de goto_state
+  # pintar a cor do estado com o fade normal de 600ms: o arco-íris se resolve
+  # na cor que significa alguma coisa, em vez de cortar seco.
+  #
+  # Varre 360° de matiz em 24 passos de 15°, com transição (75ms) maior que o
+  # passo (70ms) de propósito: cada comando interrompe o anterior no meio do
+  # fade, então a cor nunca "chega e senta" — é movimento contínuo, não 24
+  # saltos. Saturação e brilho ficam no máximo o tempo todo; a única coisa
+  # que muda é o matiz.
+  - id: animacao_boot
+    mode: single
+    then:
+      # Entrada: do escuro para o vermelho, o fade que abre a animação.
+      - lambda: |-
+          id(boot_anim_passo) = 0;
+          auto c = id(led_cozinha).turn_on();
+          c.set_effect("None");
+          c.set_rgb(1, 0, 0);
+          c.set_brightness(1.0);
+          c.set_transition_length(260);
+          c.perform();
+      - delay: 260ms
+      - repeat:
+          count: 24
+          then:
+            - lambda: |-
+                // HSV -> RGB com S=1 e V=1: nesse caso um canal está sempre
+                // em 1, outro em 0, e só o terceiro cruza a rampa. É a mesma
+                // conta que o hexágono de matiz faz, escrita à mão porque não
+                // vale puxar uma biblioteca de cor para seis linhas.
+                float h = id(boot_anim_passo) * (360.0f / 24.0f);
+                id(boot_anim_passo)++;
+                float x = 1.0f - fabsf(fmodf(h / 60.0f, 2.0f) - 1.0f);
+                float r = 0, g = 0, b = 0;
+                if      (h <  60) { r = 1; g = x;        }
+                else if (h < 120) { r = x; g = 1;        }
+                else if (h < 180) {        g = 1; b = x; }
+                else if (h < 240) {        g = x; b = 1; }
+                else if (h < 300) { r = x;        b = 1; }
+                else              { r = 1;        b = x; }
+                auto c = id(led_cozinha).turn_on();
+                c.set_rgb(r, g, b);
+                c.set_brightness(1.0);
+                c.set_transition_length(75);
+                c.perform();
+            - delay: 70ms
 
   # ---- E1: delay de pré-partida, depois decide E2 ou E3 ----
   - id: pre_partida_timer
@@ -414,7 +477,9 @@ script:
             - lambda: |-
                 id(teste_ativo) = false;
                 id(pzem_bomba).set_update_interval(3000);
-                id(led_cozinha).turn_off().perform();
+                auto c = id(led_cozinha).turn_off();
+                c.set_transition_length(500);  // explícito: não depender do default
+                c.perform();
                 id(teste_partida_sensor).publish_state(id(teste_pico_partida));
                 char buf[96];
                 if (!std::isnan(id(teste_regime))) {
@@ -435,6 +500,10 @@ script:
   # ---- E9: Rotina de Boot Seguro (recuperação de apagão) ----
   - id: boot_seguro
     then:
+      # Dispara e segue: a animação roda DENTRO dos 2s abaixo, não depois.
+      # script.execute não bloqueia, então o boot não fica um milissegundo
+      # mais lento por causa dela.
+      - script.execute: animacao_boot
       - delay: 2s   # estabiliza a leitura do ADC e absorve flicker de rede
       - lambda: |-
           int salvo = id(fsm_state);
@@ -702,7 +771,9 @@ sensor:
                 ESP_LOGE("teste", "Teste abortado: corrente %.2f A muito acima do limite!", x);
                 id(rele_bomba).turn_off();
                 id(teste_ativo) = false;
-                id(led_cozinha).turn_off().perform();
+                auto c = id(led_cozinha).turn_off();
+                c.set_transition_length(500);  // explícito: não depender do default
+                c.perform();
               }
           - lambda: |-
               if (std::isnan(x)) return;
