@@ -136,12 +136,15 @@ Se o sistema salvasse "bomba ligada" e religasse o relé direto no boot, haveria
 - **Corrente baixa** → bomba a seco / cisterna vazia → **E7**.
 - **Corrente fantasma** (relé desligado + corrente > 0.5 A por mais de 10 s) → contatos do relé/contator **soldados** → **E5** (branco piscando). O software não consegue cortar um defeito mecânico — o alarme existe para o usuário **desligar o disjuntor**. Vale em **qualquer** estado, inclusive durante a Pausa (é exatamente quando alguém pode estar com a mão na caixa!).
 
-### 4.3 Sensores de porta (microswitches) — fail-safe por polaridade, não por laço EOL
+### 4.3 Sensores de porta (microswitches) — fail-safe por polaridade e por série, não por laço EOL
 
-Expansão sem relação com a FSM da bomba: 2 microswitches na grade de
-serviço (confirmam que a lingueta da fechadura elétrica avançou até a
-posição travada, não só que a porta encostou) e 1 na porta de madeira da
-cozinha, todos como `binary_sensor` de observabilidade no Home Assistant.
+Expansão sem relação com a FSM da bomba: as 3 portas da área de serviço
+(grade principal, grade secundária e porta de madeira da cozinha), todas
+como `binary_sensor` de observabilidade no Home Assistant. Nas duas grades,
+2 microswitches por grade (confirmam que a lingueta da fechadura avançou
+até a posição travada, não só que a porta encostou) ficam ligados **em
+série entre si** — 5 switches físicos, mas só 3 sinais chegam ao ESP32, um
+por porta.
 
 Mesma convenção elétrica do botão (contato NA, pull-up interno do
 ESP32-C3), mas com a polaridade **oposta**: sem `inverted`. O botão precisa
@@ -157,6 +160,17 @@ contrapartida de não distinguir "aberta de verdade" de "cabo cortado" — um
 laço EOL faria essa distinção, mas para um sensor de porta essa diferença
 importa menos do que para o nível d'água (lá a FSM decide ligar a bomba
 sozinha; aqui é só alerta pro morador olhar).
+
+**A série resolve "os dois confirmam" na fiação, não no software.** Uma
+versão anterior deste sensor usava 2 GPIOs por grade e um
+`binary_sensor: template` combinando os dois (`A || B`) num terceiro
+sensor "confirmada". Ligar os dois microswitches em série antes de descer
+o fio faz a mesma coisa com um GPIO a menos e nenhuma lógica extra: o laço
+só fecha se ambos estiverem atuados, e qualquer um sozinho aberto — ou o
+cabo rompido em qualquer ponto, inclusive entre os dois switches — já
+derruba o laço inteiro. A única perda é a granularidade (não dá pra saber,
+de longe, qual dos dois microswitches falhou) — irrelevante aqui, já que o
+morador vai até a grade olhar de qualquer forma.
 
 Detalhamento de fiação, valores de pino e o checklist de instalação estão
 no [Manual de Fiação, seção 9](MANUAL-FIACAO.md#9-expansão--sensores-de-porta-microswitches).
@@ -220,11 +234,12 @@ no [Manual de Fiação, seção 9](MANUAL-FIACAO.md#9-expansão--sensores-de-por
 ### 5.5 Expansão — Sensores de Porta (Microswitches)
 | Qtd | Item | Observações |
 |---|---|---|
-| 2 | Microswitch (contato NA) | Grade de serviço — montados na própria fechadura elétrica, atuados pela lingueta ao avançar (não pela porta encostando) |
+| 2 | Microswitch (contato NA) | Grade Principal — em série entre si, atuados pela lingueta ao avançar (não pela porta encostando) |
+| 2 | Microswitch (contato NA) | Grade Secundária — idem, par em série independente da Grade Principal |
 | 1 | Microswitch (contato NA) | Porta de madeira da cozinha — montado no batente, atuado pelo fechamento da porta |
-| — | Cabo 3 vias (par trançado ou alarme 2P+T) | Quadro → grade de serviço, curto (grade fica perto do quadro) |
+| — | Cabo 2 vias (par trançado ou alarme) × 2 | Quadro → cada grade, curto (grades ficam perto do quadro) — 2 vias por grade, não 3: a série já fica do lado de fora |
 | — | Fiação da porta da cozinha | Reaproveita as 2 vias do UTP da cozinha até então não usadas (7 e 8) — nenhum cabo novo |
-| 3 (opcional) | Resistor 10 kΩ (pull-up externo) + Capacitor cerâmico 100 nF | Só se o trecho até a grade for longo/ruidoso — o pull-up interno do ESP32-C3 basta para cabo curto. Ver Manual de Fiação 9.2 |
+| 2 (opcional) | Resistor 10 kΩ (pull-up externo) + Capacitor cerâmico 100 nF | Um por grade, só se o trecho for longo/ruidoso — o pull-up interno do ESP32-C3 basta para cabo curto. Ver Manual de Fiação 9.2 |
 
 ---
 
@@ -249,7 +264,7 @@ no [Manual de Fiação, seção 9](MANUAL-FIACAO.md#9-expansão--sensores-de-por
 - **LED RGB:** 3 saídas `ledc` (PWM) → `light: rgb` com `transition` para os fades suaves. O botão é anodo comum, **mas** o YYNMOS-4 é chave low-side: sinal ALTO do ESP32 liga o canal e acende o LED → **não usar `inverted`** (só inverteria se o LED fosse ligado direto no GPIO).
 - **Boias:** `adc` sensor no pino analógico com filtro `median`, histerese de 4 leituras e supervisão do laço EOL (faixas válidas + zonas de falha).
 - **PZEM-004T:** componente nativo `pzemac` (V3/Modbus) via UART.
-- **Sensores de porta (expansão):** 3 `binary_sensor: gpio` independentes (grade × 2 + cozinha), pull-up interno, contato NA, **sem** `inverted` — a polaridade oposta ao botão é deliberada, ver 4.3. Um `binary_sensor: template` combina os dois da grade em "Grade Confirmada Trancada". Não participam da FSM da bomba — são só observabilidade.
+- **Sensores de porta (expansão):** 3 `binary_sensor: gpio` independentes (Grade Principal, Grade Secundária, Trava Madeira Cozinha), pull-up interno, contato NA, **sem** `inverted` — a polaridade oposta ao botão é deliberada, ver 4.3. Nas grades, os 2 microswitches ficam em série na própria fiação (não há `binary_sensor: template` combinando pinos — a série já faz o "os dois confirmam"). Não participam da FSM da bomba — são só observabilidade.
 - **Relé:** `switch: gpio` direto no GPIO7 → módulo relé 5V (IN ativo em HIGH, sem `inverted` no ESPHome — GPIO7 em nível ALTO já liga o relé), com `restore_mode: ALWAYS_OFF` (a E9 decide religar, nunca o boot cru). Confirme no datasheet do módulo o estado do IN com o GPIO flutuando no boot, antes do ESPHome assumir o pino — idealmente o relé fica desligado nesse instante, reforçando o `ALWAYS_OFF`.
 - **Autonomia:** `reboot_timeout: 0s` em `wifi:` e `api:` — o chip jamais reinicia por falta de rede.
 - **Home Assistant:** expor estado da FSM (`text_sensor`), nível, "Última Ocorrência" e telemetria do PZEM; dois `button` template espelham os cliques físicos. Métricas de debug ficam **ocultas** no registro de entidades do HA (não no YAML). A lógica de segurança roda **100% local no ESP32**, independente do Wi-Fi/HA.

@@ -32,9 +32,9 @@ substitutions:
   # (cosmético) — não decide o modo. Ainda NÃO TESTADO com o contato fechado
   # no boot: ver checklist da seção 9 do MANUAL-FIACAO.md antes de fixar a
   # fiação definitiva.
-  pino_grade_trava_1: GPIO3   # microswitch 1 — lingueta da fechadura da grade
-  pino_grade_trava_2: GPIO8   # microswitch 2 — idem (pino de strapping, ver acima)
-  pino_porta_cozinha: GPIO10  # microswitch — porta de madeira da cozinha
+  pino_grade_principal: GPIO3    # 2 microswitches em série — grade principal do serviço
+  pino_grade_secundaria: GPIO8   # 2 microswitches em série — grade secundária (pino de strapping, ver acima)
+  pino_porta_cozinha: GPIO10     # 1 microswitch — porta de madeira da cozinha
 
   # ------------- CALIBRAÇÃO (ajustar na instalação) -------------
   # Matriz de boias SUPERVISIONADA (laço com resistor de fim de linha):
@@ -517,53 +517,52 @@ binary_sensor:
   - platform: status
     name: "Status Wi-Fi"
 
-  # ---- Grade de serviço: 2 microswitches confirmam que a lingueta da
-  # fechadura elétrica realmente avançou (não só que a porta encostou).
-  # Contato NA (normally open), fecha para GND quando a lingueta empurra o
-  # microswitch. SEM `inverted` de propósito: pino em repouso (pull-up,
-  # HIGH) = "aberta/não confirmada" — cabo cortado ou desconectado nunca
-  # aparenta "trancada". Mesma filosofia de fail-safe da matriz de boias.
-  # Ver MANUAL-FIACAO.md seção 9 (fiação) e MEMORIAL-DESCRITIVO.md 4.3
-  # (por que essa polaridade, não a oposta).
+  # ---- As 3 portas da área de serviço. Cada uma é 1 GPIO só — nas duas
+  # grades, os 2 microswitches ficam em SÉRIE entre si (mesma lógica de zona
+  # de alarme): o "os dois confirmam" já acontece no cobre, então só descem
+  # 2 fios por grade e o ESP32 nem sabe que são 2 switches, só vê 1 laço.
+  # Contato NA, fecha para GND quando atuado (lingueta avançada / porta
+  # encostada). SEM `inverted` de propósito: pino em repouso (pull-up,
+  # HIGH) = "aberta/não confirmada" — cabo cortado, switch desconectado OU
+  # qualquer um dos dois em série aberto caem no mesmo estado. Nunca
+  # aparenta "trancada"/"fechada" por engano. Mesma filosofia de fail-safe
+  # da matriz de boias. Ver MANUAL-FIACAO.md seção 9 e MEMORIAL-DESCRITIVO.md
+  # 4.3 (por que essa polaridade, não a oposta).
   - platform: gpio
-    id: grade_trava_1
-    name: "Grade Trava 1"
-    device_class: lock
-    pin:
-      number: ${pino_grade_trava_1}
-      mode:
-        input: true
-        pullup: true
-    filters:
-      - delayed_on: 50ms
-      - delayed_off: 50ms
-
-  - platform: gpio
-    id: grade_trava_2
-    name: "Grade Trava 2"
-    device_class: lock
-    pin:
-      number: ${pino_grade_trava_2}
-      mode:
-        input: true
-        pullup: true
-    filters:
-      - delayed_on: 50ms
-      - delayed_off: 50ms
-
-  # Combinada: só reporta "trancada" (off) se as DUAS lingueta confirmarem —
-  # qualquer uma sozinha em "aberta" já é motivo de alerta na grade.
-  - platform: template
-    name: "Grade Confirmada Trancada"
-    device_class: lock
-    lambda: return id(grade_trava_1).state || id(grade_trava_2).state;
-
-  # ---- Porta de madeira da cozinha — vias 7/8 do mesmo UTP do botão/LED,
-  # até então não usadas (ver MANUAL-FIACAO.md seção 5 e 9). ----
-  - platform: gpio
-    id: porta_cozinha
-    name: "Porta Cozinha"
+    id: grade_principal
+    name: "Grade Principal (Serviço)"
     device_class: door
+    pin:
+      number: ${pino_grade_principal}
+      mode:
+        input: true
+        pullup: true
+    filters:
+      - delayed_on: 50ms
+      - delayed_off: 50ms
+
+  - platform: gpio
+    id: grade_secundaria
+    name: "Grade Secundária (Serviço)"
+    device_class: door
+    pin:
+      number: ${pino_grade_secundaria}
+      mode:
+        input: true
+        pullup: true
+    filters:
+      - delayed_on: 50ms
+      - delayed_off: 50ms
+
+  # Porta de madeira da cozinha — vias 7/8 do mesmo UTP do botão/LED, até
+  # então não usadas (ver MANUAL-FIACAO.md seção 5 e 9). Só 1 switch, sem
+  # série. device_class `lock` porque este é o ponto de acesso final antes
+  # da cozinha — se preferir tratá-la como porta simples (sem noção de
+  # "trancada"), troque para `door`, é só cosmético no HA.
+  - platform: gpio
+    id: trava_cozinha
+    name: "Trava Madeira Cozinha"
+    device_class: lock
     pin:
       number: ${pino_porta_cozinha}
       mode:

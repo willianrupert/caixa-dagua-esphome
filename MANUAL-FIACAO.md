@@ -48,8 +48,11 @@ REDE 220V ──[disjuntor]──┤                                            
                     2 fios ────────────────────────► GPIO0 (com pull-up 3.3k
                                                        no quadro + cap 100nF)
 
-                    GRADE DE SERVIÇO: 2 microswitches na fechadura elétrica
-                    cabo 3 vias ────────────────────► GPIO3 / GPIO8 (seção 9)
+                    GRADE PRINCIPAL: 2 microswitches em série na fechadura
+                    cabo 2 vias ─────────────────────► GPIO3 (seção 9)
+
+                    GRADE SECUNDÁRIA: 2 microswitches em série na fechadura
+                    cabo 2 vias ─────────────────────► GPIO8 (seção 9)
 ```
 
 - **PZEM-004T** mede a corrente **em série** na fase (L) — a fase passa por dentro do módulo (bornes IN→OUT), não é grampo externo (shunt interno).
@@ -96,9 +99,9 @@ Tabela oficial de pinos (igual ao `substitutions:` do YAML — se mudar aqui, mu
 | `pino_rele` | GPIO7 | Módulo relé 5V, pino **IN** (direto, sem passar pelo YYNMOS-4) | Saída digital, ativa em HIGH (sem `inverted`) |
 | `pino_uart_tx` | GPIO21 | PZEM-004T, **RX** | Saída serial |
 | `pino_uart_rx` | GPIO20 | PZEM-004T, **TX** | Entrada serial |
-| `pino_grade_trava_1` | GPIO3 | Microswitch 1, lingueta da grade | Entrada digital (pull-up interno) |
-| `pino_grade_trava_2` | GPIO8 | Microswitch 2, lingueta da grade | Entrada digital (pull-up interno) — **pino de strapping, ver seção 9** |
-| `pino_porta_cozinha` | GPIO10 | Microswitch, porta de madeira da cozinha (via UTP) | Entrada digital (pull-up interno) |
+| `pino_grade_principal` | GPIO3 | Grade principal — 2 microswitches em série | Entrada digital (pull-up interno) |
+| `pino_grade_secundaria` | GPIO8 | Grade secundária — 2 microswitches em série | Entrada digital (pull-up interno) — **pino de strapping, ver seção 9** |
+| `pino_porta_cozinha` | GPIO10 | Microswitch único, porta de madeira da cozinha (via UTP) | Entrada digital (pull-up interno) |
 
 > TX do ESP32 vai no RX do PZEM e vice-versa — é cruzado, como qualquer UART ponto-a-ponto.
 >
@@ -286,16 +289,19 @@ Ver a lista completa com quantidades e observações no [Memorial Descritivo, se
 - Capacitor cerâmico 100 nF + resistor pull-up 3.3 kΩ
 - Supressor de surto (snubber RC ou varistor 275 V)
 - Botão inox antivandalismo com LED RGB anodo comum + cabo UTP Cat5e/6
-- 3× microswitch (2 grade + 1 porta cozinha) + cabo 3 vias até a grade
+- 5× microswitch (2+2 nas grades, em série cada par, + 1 porta cozinha) + 2 cabos de 2 vias até as grades
 
 ---
 
 ## 9. Expansão — Sensores de Porta (Microswitches)
 
-Adiciona 3 entradas digitais simples ao mesmo quadro: 2 microswitches na
-grade de serviço (confirmam que a lingueta da fechadura elétrica realmente
-avançou) e 1 na porta de madeira da cozinha. Não mexe na FSM da bomba — são
-`binary_sensor` independentes, só para observabilidade no Home Assistant.
+Adiciona 3 entradas digitais ao mesmo quadro, para as 3 portas da área de
+serviço: a **grade principal** e a **grade secundária** (2 microswitches
+cada, ligados **em série** entre si) e a **porta de madeira da cozinha** (1
+microswitch). Cinco switches físicos, mas só 3 sinais chegam ao ESP32 — a
+série já resolve "os dois confirmam" no cobre, sem precisar de lógica extra
+no YAML. Não mexe na FSM da bomba — são `binary_sensor` independentes, só
+para observabilidade no Home Assistant.
 
 ### 9.1 Por que a polaridade é o oposto do botão
 
@@ -308,7 +314,7 @@ Sem `inverted`, o `binary_sensor` fica assim:
 
 | Situação física | Pino | Estado ESPHome | Semântica HA (`device_class: lock`/`door`) |
 |---|---|---|---|
-| Lingueta avançada / porta fechada (switch atuado) | LOW (GND) | `off` | Trancada / Fechada |
+| Lingueta avançada / porta fechada (switch(es) atuado(s)) | LOW (GND) | `off` | Trancada / Fechada |
 | Lingueta recuada / porta aberta (switch solto) | HIGH (pull-up) | `on` | Aberta / Não confirmada |
 | **Cabo cortado ou switch desconectado** | HIGH (pull-up) | `on` | **Aberta / Não confirmada** |
 
@@ -318,46 +324,69 @@ mesma filosofia de fail-safe da matriz de boias (seção 4), só que aqui via
 polaridade do pull-up em vez de um laço EOL dedicado. Não há resistor de
 fim de linha nestes 3 sinais — um corte no meio do cabo também lê como
 "aberta", então o efeito prático de segurança é o mesmo sem o custo de mais
-2 resistores e um canal ADC por switch.
+resistores e um canal ADC por switch.
 
-### 9.2 Grade de serviço — 2 microswitches, cabo novo
+> ⚠️ **Nunca use `inverted: true` nestes 3 sinais.** Inverter a leitura faz
+> um cabo cortado ler como `off` (Trancada/Fechada) — o disfarce exatamente
+> oposto ao que este desenho existe para evitar. `inverted` só entra no
+> botão, porque lá o evento é o clique, não o repouso.
 
-Os dois microswitches ficam montados na própria fechadura elétrica, cada um
-posicionado para ser pressionado pela lingueta quando ela avança até a
-posição travada — não pela porta encostando no marco. Isso é o que garante
-detectar o caso real que motivou o pedido: a fechadura "comandada" para
-travar mas a lingueta não assentou (desalinhamento, sujeira, o que for).
+**A série faz o "os dois confirmam" na fiação, não no software.** Nas duas
+grades, os 2 microswitches ficam em série entre si: o laço só fecha (e o
+GPIO só lê LOW/"confirmada") se **ambos** estiverem atuados. Qualquer um
+sozinho aberto — ou o cabo rompido em qualquer ponto do trajeto, incluindo
+entre os dois switches — já derruba o laço inteiro pra "aberta/não
+confirmada". Nenhum `binary_sensor: template` combinando dois pinos é
+necessário (a versão anterior deste manual tinha 2 GPIOs + 1 combinada para
+uma única grade; esta versão usa 1 GPIO por grade, com a combinação já
+feita na série).
 
-Cabo novo, 3 vias, do quadro até a grade (par trançado ou cabo de alarme
-2P+T já resolve; **não** precisa ser blindado):
+### 9.2 Grade Principal e Grade Secundária — cabo novo, 2 vias cada
 
-| Via | Função | Vai para (no quadro) |
-|---|---|---|
-| 1 | GND comum | GND comum |
-| 2 | Sinal Trava 1 | GPIO3 (`pino_grade_trava_1`) |
-| 3 | Sinal Trava 2 | GPIO8 (`pino_grade_trava_2`) |
+Em cada grade, os dois microswitches ficam montados na própria fechadura
+elétrica, cada um posicionado para ser pressionado pela lingueta quando ela
+avança até a posição travada — não pela porta encostando no marco. Isso é o
+que garante detectar o caso real que motivou o pedido: a fechadura
+"comandada" para travar mas a lingueta não assentou (desalinhamento, sujeira,
+o que for). **Se alguma das duas grades não tiver fechadura elétrica** (só
+tranca mecânica), o mesmo microswitch serve para confirmar a posição da
+grade — só troque o ponto de montagem para o batente, como na cozinha.
 
-Se o trecho até a grade for longo ou correr perto de fiação de 220 V,
-considere reforçar cada sinal com um pull-up externo de 10 kΩ (3,3 V) +
-capacitor cerâmico 100 nF (GND) no lado do quadro — o pull-up interno do
-ESP32-C3 (~45 kΩ) é fraco e mais sensível a ruído em cabos longos. Não é
-obrigatório para um cabo curto dentro de casa.
+Os dois microswitches de uma mesma grade ficam **em série** (perna de saída
+do primeiro na perna de entrada do segundo), e só as duas pontas externas
+desse par descem ao quadro — **2 vias por grade**, não 3:
 
-> ⚠️ **GPIO8 é pino de strapping** (controla se a ROM imprime o log de boot
-> — não decide o modo SPI/Download, que é o GPIO9, esse sim evitado de
-> propósito). Efeito esperado é só cosmético, mas **ainda não foi testado**
-> com o contato fechado no instante do boot. Antes de fixar a fiação
-> definitiva: feche manualmente o microswitch 2, dê power-cycle no ESP32 e
-> confirme no log/Home Assistant que ele sobe normalmente (FSM entra em E0
-> ou E1, não trava em bootloop). Se algo der errado, troque
-> `pino_grade_trava_2` para outro GPIO livre do seu módulo específico — a
-> troca é só no `substitutions:` do YAML.
+| Grade | Via | Função | Vai para (no quadro) |
+|---|---|---|---|
+| Principal | 1 | GND comum | GND comum |
+| Principal | 2 | Sinal (par em série) | GPIO3 (`pino_grade_principal`) |
+| Secundária | 1 | GND comum | GND comum |
+| Secundária | 2 | Sinal (par em série) | GPIO8 (`pino_grade_secundaria`) |
+
+Cabo por grade: par trançado ou cabo de alarme 2 vias já resolve, **não**
+precisa ser blindado. Se o trecho até alguma grade for longo ou correr
+perto de fiação de 220 V, considere reforçar o sinal com um pull-up externo
+de 10 kΩ (3,3 V) + capacitor cerâmico 100 nF (GND) no lado do quadro — o
+pull-up interno do ESP32-C3 (~45 kΩ) é fraco e mais sensível a ruído em
+cabos longos. Não é obrigatório para um cabo curto dentro de casa.
+
+> ⚠️ **GPIO8 (Grade Secundária) é pino de strapping** (controla se a ROM
+> imprime o log de boot — não decide o modo SPI/Download, que é o GPIO9,
+> esse sim evitado de propósito). Efeito esperado é só cosmético, mas
+> **ainda não foi testado** com o par em série fechado no instante do boot.
+> Antes de fixar a fiação definitiva: feche manualmente os dois microswitches
+> da grade secundária, dê power-cycle no ESP32 e confirme no log/Home
+> Assistant que ele sobe normalmente (FSM entra em E0 ou E1, não trava em
+> bootloop). Se algo der errado, troque `pino_grade_secundaria` para outro
+> GPIO livre do seu módulo específico — a troca é só no `substitutions:` do
+> YAML.
 
 ### 9.3 Porta da cozinha — reaproveita o UTP existente
 
 Nenhum cabo novo: o UTP que já vai do quadro até a cozinha (seção 5) tem 2
 vias sobrando (7 e 8). O microswitch fica no batente da porta de madeira,
-posicionado para ser pressionado quando a porta fecha.
+posicionado para ser pressionado quando a porta fecha. Só 1 switch aqui, sem
+série.
 
 | Via (UTP) | Função | Vai para (no quadro) |
 |---|---|---|
@@ -371,11 +400,18 @@ seção 5.
 
 ### 9.4 Checklist desta expansão
 
-1. [ ] Grade: cabo de 3 vias puxado, sem correr junto de fiação de 220 V.
-2. [ ] Multímetro: cada microswitch da grade fecha só quando a lingueta
-   correspondente avança até a posição travada (não antes).
-3. [ ] Cozinha: continuidade das vias 7/8 do UTP confirmada ponta a ponta.
-4. [ ] GPIO8 testado com o contato fechado no boot (ver 9.2) antes de
-   fixar a fiação definitiva.
-5. [ ] Após gravar o firmware: os 3 (ou 4, com a combinada) entities
-   aparecem no Home Assistant e mudam de estado ao atuar cada switch à mão.
+1. [ ] Grade Principal: cabo de 2 vias puxado, sem correr junto de fiação
+   de 220 V.
+2. [ ] Grade Secundária: idem.
+3. [ ] Multímetro, em cada grade, no par em série isolado (antes de plugar
+   no ESP32): resistência cai a praticamente zero **só quando os DOIS**
+   microswitches estão atuados; qualquer um sozinho solto já mostra
+   circuito aberto.
+4. [ ] Cada microswitch da grade fecha só quando a lingueta correspondente
+   avança até a posição travada (não antes).
+5. [ ] Cozinha: continuidade das vias 7/8 do UTP confirmada ponta a ponta.
+6. [ ] GPIO8 testado com o par da grade secundária fechado no boot (ver
+   9.2) antes de fixar a fiação definitiva.
+7. [ ] Após gravar o firmware: `Grade Principal (Serviço)`, `Grade
+   Secundária (Serviço)` e `Trava Madeira Cozinha` aparecem no Home
+   Assistant e mudam de estado ao atuar cada switch à mão.
