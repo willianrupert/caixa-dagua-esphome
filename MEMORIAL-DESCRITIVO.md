@@ -23,9 +23,15 @@
 ### 1.1 Botão físico único (curto vs. longo)
 O sistema usa um **timer de intenção** para diferenciar os cliques:
 
-- **Clique Curto (< 1.0 s):** liga/desliga manual da bomba ou reset de falha (atua nos estados E3, E4, E6, E7).
+- **Clique Curto (< 1.0 s):** liga/desliga manual da bomba ou reset de falha (atua nos estados E0, E3, E6, E7).
 - **Clique Longo (≥ 1.5 s):** interrupção **soberana** — ativa/desativa o **Modo Pausa (E8)** a partir de **qualquer** estado, inclusive falhas críticas (E6/E7).
 - A janela entre 1.0 s e 1.5 s é zona morta (evita interpretação ambígua).
+- **Clique com a caixa já cheia não muda de estado — só pisca.** Em E0
+  (parado, caixa cheia) o clique dá um pulso de verde e volta a apagar; em E4
+  (verde já aceso, dentro da janela de 1 min) o clique pisca e retoma o verde
+  sólido. Nenhum dos dois casos toca em `fsm_state`, grava na flash ou
+  reinicia o `sucesso_timer` — existe só pra confirmar que o clique chegou,
+  sem deixar clique repetido monopolizar o LED com rodadas de 60 s.
 
 ### 1.2 Persistência de estado (EEPROM/Flash)
 - O ESP32 **não salva o estado do relé físico** — salva o **Estado Lógico da Máquina de Estados**.

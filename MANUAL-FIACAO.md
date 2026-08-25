@@ -152,11 +152,76 @@ Os três ramos ficam em paralelo entre os **2 fios** que descem ao quadro (chame
 
 > Meça essas tensões com um multímetro **antes** de conectar o fio A ao GPIO0 — se bater com a tabela, a fiação das boias está correta.
 
+### 4.1 Técnica de campo — caixinha de resina PU40
+
+Registro da montagem usada na caixa do 2º andar (2026-08-22), porque funciona
+e vale repetir nas próximas caixas: os três ramos (boia mín. + 1kΩ, boia máx.
++ 4.7kΩ, EOL 10kΩ) ficam soldados dentro de uma caixinha, depois preenchida
+com resina PU40 — sela contra umidade sem exigir caixa estanque de verdade.
+
+**Dois nós, três ramos, tudo em paralelo entre eles:**
+
+```
+LADO DOS SENSORES                                 LADO DO CABO
+      (Ficam na Caixa D'água)                           (Desce até o ESP32)
+
+                     _______________________________________
+                    |           CAIXINHA DE RESINA          |
+                    |                                       |
+ [BOIA MÁXIMA]      |                                       |
+   Fio Máx 1 -------|--------+                              |
+                    |        |                              |
+   Fio Máx 2 -------|---[ Resistor 4.7kΩ ]---+              |
+                    |        |               |              |
+                    |      [ * ] NÓ 1      [ * ] NÓ 2       |
+                    |        |               |              |
+ [BOIA MÍNIMA]      |        |               |              |
+   Fio Mín 1 -------|--------+------------------------------|---> Fio COMUM
+                    |                        |              |    (vai pro GND do quadro,
+   Fio Mín 2 -------|---[ Resistor 1.0kΩ ]---+              |     NUNCA 3.3V — o pull-up
+                    |        |               |              |     já mora no quadro)
+                    |    [ Resistor 10kΩ, EOL ]--------------|---> Fio de SINAL
+                    |        |               |              |    (vai pro ADC/GPIO0
+                    |________+_______________+_______________|     do quadro)
+                                 (Preenchido com PU40)
+```
+
+- **NÓ 1** (comum): Fio Máx 1 + Fio Mín 1 + **uma perna do resistor EOL 10kΩ**
+  + Fio COMUM que desce ao quadro. Torça os quatro juntos, uma gota de solda.
+- **NÓ 2** (sinal): pernas de trás dos resistores 4.7kΩ e 1.0kΩ + **a outra
+  perna do EOL 10kΩ** + Fio de SINAL que desce ao quadro.
+- **Trilhas isoladas:** Fio Máx 2 solda direto na perna da frente do 4.7kΩ;
+  Fio Mín 2 solda direto na perna da frente do 1.0kΩ.
+- **Fio COMUM vai pro GND do quadro, nunca pro 3.3V** — o pull-up de 3.3kΩ
+  que fecha o divisor de tensão já mora no quadro, no nó do ADC (ver tabela
+  acima). Se o comum fosse pro 3.3V também, não sobraria caminho pro GND e o
+  ADC leria sempre perto de 3.3V, não importa a posição das boias.
+
+> ⚠️ **O resistor EOL de 10kΩ é o terceiro ramo, não um extra opcional** — sem
+> ele, "ambas as boias abertas" (caixa cheia de verdade) e "cabo rompido"
+> ficam **eletricamente idênticos** (os dois viram circuito aberto entre os
+> nós, ~3.3V no ADC). É exatamente o caso que o laço supervisionado existe
+> pra distinguir (seção 4, tabela de tensões) — sem o EOL, a caixa cheia
+> seria diagnosticada como sensor com defeito, nunca como "cheia" de
+> verdade. **Instale-o na caixa** (NÓ 1 ↔ NÓ 2), nunca no quadro.
+
+> ✅ **Corrigido e medido em campo (2026-08-25):** com o EOL instalado, água
+> entre as boias mediu **3,19 kΩ no painel** — bate com o esperado (4.7k ∥
+> 10k ≈ 3,2 kΩ) dentro da tolerância dos resistores. Confirma que o terceiro
+> ramo está mesmo no circuito.
+
+**Dica de campo — proteja os resistores antes da resina:** as pernas cruas
+dos resistores ficam vulneráveis a encostar no NÓ vizinho quando a caixinha é
+apertada pra caber. Vista cada resistor com um pedaço de espaguete
+termorretrátil (ou fita isolante), deixando só as pontas expostas pra solda —
+cria um túnel protetor e evita curto acidental depois que já não dá mais pra
+abrir e corrigir.
+
 ---
 
 ## 5. Cozinha — botão + LED (cabo UTP)
 
-Um único cabo de rede (Cat5e/Cat6) liga o quadro à cozinha, usando **6 das 8 vias**:
+Um único cabo de rede (Cat5e/Cat6) liga o quadro à cozinha, usando as **8 vias**:
 
 | Via (UTP) | Função | Vai para (no quadro) |
 |---|---|---|

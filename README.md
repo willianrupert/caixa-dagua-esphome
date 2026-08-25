@@ -52,7 +52,7 @@ stateDiagram-v2
     E2 --> E4: boia máxima fechou
     E3 --> E4: boia máxima fechou
     E3 --> E0: clique curto (desliga)
-    E4 --> E0: após 60s ou clique curto
+    E4 --> E0: após 60s
 
     E2 --> E6: sobrecorrente
     E2 --> E7: subcorrente

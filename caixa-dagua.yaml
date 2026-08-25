@@ -302,6 +302,49 @@ script:
       - lambda: |-
           if (id(fsm_state) == 4) id(goto_state).execute(0);
 
+  # ---- Feedback de clique quando não há ação real a fazer (caixa já cheia) ----
+  # As duas rotinas abaixo são puramente visuais: não tocam em fsm_state, não
+  # gravam na flash, não reiniciam timer nenhum. Existem pra responder ao
+  # clique sem monopolizar o LED — clicar 5x com a caixa cheia não pode dar
+  # 5 rodadas de 60s de verde sólido nem 5 gravações na NVS.
+  #
+  # Pulso a partir do Standby (LED apagado): "liguei" -> "já está cheia,
+  # olha o pisco" -> apaga de novo. Não entra em E4 de verdade.
+  - id: pulso_feedback_standby
+    then:
+      - lambda: |-
+          auto c = id(led_cozinha).turn_on();
+          c.set_rgb(0, 1, 0);
+          c.set_brightness(1.0);
+          c.set_effect("None");
+          c.set_transition_length(80);
+          c.perform();
+      - delay: 350ms
+      - lambda: |-
+          if (id(fsm_state) != 0) return;  // saiu do Standby no meio do pulso
+          auto c = id(led_cozinha).turn_off();
+          c.set_transition_length(250);
+          c.perform();
+
+  # Pulso a partir do sucesso (LED verde já aceso, dentro da janela de 1 min):
+  # apaga rápido e volta pro verde sólido — reconhece o clique sem dispensar
+  # o sucesso nem reiniciar os 60s do sucesso_timer.
+  - id: pulso_feedback_sucesso
+    then:
+      - lambda: |-
+          auto c = id(led_cozinha).turn_off();
+          c.set_transition_length(80);
+          c.perform();
+      - delay: 250ms
+      - lambda: |-
+          if (id(fsm_state) != 4) return;  // os 60s estouraram no meio do pulso
+          auto c = id(led_cozinha).turn_on();
+          c.set_rgb(0, 1, 0);
+          c.set_brightness(1.0);
+          c.set_effect("None");
+          c.set_transition_length(250);
+          c.perform();
+
   # ---- Inching: tempo máximo de bomba ligada (proteção contra boia quebrada) ----
   # Se a boia superior quebrar e nunca sinalizar "cheia", a bomba não pode
   # ficar ligada para sempre. Após ${numero_tempo_maximo_bomba} contínuos, o
@@ -396,18 +439,21 @@ script:
           switch (id(fsm_state)) {
             case 0:  // liga manual
               if (id(water_level) == 0) {
-                // Caixa já cheia: responde com o verde de sucesso (feedback)
-                // em vez de dar um "blip" de 1-2s no contator.
-                ESP_LOGI("fsm", "Partida manual ignorada: caixa ja esta cheia");
-                id(goto_state).execute(4);
+                // Caixa já cheia: pulso rápido de verde (feedback) em vez de
+                // reiniciar os 60s de sucesso — clique repetido não pode
+                // monopolizar o LED nem gravar na flash de novo.
+                ESP_LOGI("fsm", "Partida manual ignorada: caixa ja esta cheia (pulso de feedback)");
+                id(pulso_feedback_standby).execute();
               } else {
                 id(manual_mode) = true;
                 id(goto_state).execute(1);
               }
               break;
             case 3:  // desliga enchimento manual/intermediário
-            case 4:  // dispensa o verde de sucesso
               id(goto_state).execute(0);
+              break;
+            case 4:  // já em sucesso: pisca pra confirmar o clique, sem dispensar o verde
+              id(pulso_feedback_sucesso).execute();
               break;
             case 5:  // reconhece falha de contator (se a corrente persistir, E5 volta em ~3s)
             case 6:
