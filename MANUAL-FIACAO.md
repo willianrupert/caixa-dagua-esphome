@@ -143,28 +143,28 @@ Os três ramos ficam em paralelo entre os **2 fios** que descem ao quadro (chame
   - **Capacitor cerâmico 100 nF** até GND (filtro de ruído)
 - Fio B → GND (mesmo GND do ESP32)
 
-**⚠️ As duas boias têm orientação OPOSTA — confira antes de fechar a caixa:**
+**As duas boias fecham contato quando a água está ABAIXO delas.**
 
-| Boia | Resistor | Fecha o contato quando está... |
-|---|---|---|
-| **Mínima** (embaixo) | 1 kΩ | **seca** — abre quando a água sobe até ela |
-| **Máxima** (em cima) | 4.7 kΩ | **molhada** — orientação de transbordo, requisito hidráulico |
-
-Não é engano: é essa oposição que dá folga de tensão entre os estados (o porquê está no [Memorial 4.1.1](MEMORIAL-DESCRITIVO.md#411-por-que-as-boias-têm-lógica-oposta)). Com as duas na mesma lógica, dois estados normais ficam a ~90 mV um do outro. Se for trocar uma boia queimada, **a orientação importa tanto quanto o modelo** — girar 180° na hora de repor quebra a leitura inteira.
+> ⚠️ **A orientação das boias não se inverte** — nem "só a de cima", nem para
+> tratar transbordo. Já foi tentado (2026-08-25) e quebra duas coisas de uma
+> vez: "cheia" deixa de ser a ausência de sinal (aí um reed morto ou fio
+> rompido passa a ler "ainda não encheu" e a bomba não desliga), e dois
+> estados normais colapsam para ~90 mV de diferença. O porquê completo está
+> no [Memorial 4.1.1](MEMORIAL-DESCRITIVO.md#411-por-que-as-duas-boias-fecham-secas--e-por-que-não-se-gira).
+> Vale também na **reposição**: boia nova entra na mesma orientação da que
+> saiu, senão a leitura inteira muda de significado.
 
 Tensões esperadas no ADC (para conferir com multímetro antes de plugar no ESP32):
 
 | Situação | Resistência do laço | Tensão no nó ADC |
 |---|---|---|
-| Cabo rompido / boia desconectada | ∞ | ~3.30 V |
-| Só o EOL — as duas abertas (**intermediário**) | 10 kΩ | ~2.48 V |
-| Máxima fechada, molhada (**caixa cheia**) | 4.7k ∥ 10k ≈ 3.2 kΩ | ~1.62 V |
-| Mínima fechada, seca (**crítico**) | 1k ∥ 10k ≈ 909 Ω | ~0.71 V |
+| Cabo rompido / boia desconectada | ∞ | ~3.3 V |
+| Ambas abertas (caixa cheia) | 10 kΩ | ~2.48 V |
+| Só a máxima fechada (intermediário) | 4.7k ∥ 10k ≈ 3.2 kΩ | ~1.62 V |
+| Ambas fechadas (crítico) | 1k ∥ 4.7k ∥ 10k ≈ 762 Ω | ~0.62 V |
 | Cabo em curto | ~0 | ~0 V |
 
-> **A tensão não sobe junto com o nível.** O intermediário é a leitura mais alta dos três, não a do meio — consequência direta da lógica oposta das boias. Não "corrija" isso achando que é bug.
-
-> Meça essas tensões com um multímetro **antes** de conectar o fio A ao GPIO0 — se bater com a tabela, a fiação das boias está correta. O teste mais fácil de fazer sozinho: com a caixa entre as boias (nível intermediário), o laço deve medir **~10 kΩ**; se medir ~909 Ω ou ~3,2 kΩ, alguma boia está na orientação errada.
+> Meça essas tensões com um multímetro **antes** de conectar o fio A ao GPIO0 — se bater com a tabela, a fiação das boias está correta. Teste rápido de orientação, fácil de fazer sozinho: com o nível **entre** as boias, o laço deve medir **~3,2 kΩ**. Se medir ~10 kΩ ou ~909 Ω, alguma boia está girada.
 
 ### 4.1 Técnica de campo — caixinha de resina PU40
 
@@ -221,13 +221,8 @@ LADO DOS SENSORES                                 LADO DO CABO
 
 > ✅ **EOL corrigido e medido em campo (2026-08-25):** com água entre as
 > boias, o laço mediu **3,19 kΩ no painel** — batendo com 4.7k ∥ 10k ≈ 3,2 kΩ
-> e confirmando que o terceiro ramo entrou no circuito.
->
-> ⚠️ **Essa medição vale para a orientação ANTIGA das boias**, que era a do
-> momento do teste. Depois da reorientação (mínima fecha seca, máxima fecha
-> molhada — ver seção 4), o mesmo nível de água entre as boias passa a medir
-> **~10 kΩ**, não 3,19 kΩ. O número acima fica como registro histórico da
-> validação do EOL; para conferir a fiação hoje, use a tabela da seção 4.
+> e confirmando que o terceiro ramo entrou no circuito. Os resistores do lote
+> usado ficaram bem dentro da tolerância (~0,3% do nominal nessa combinação).
 
 **Dica de campo — proteja os resistores antes da resina:** as pernas cruas
 dos resistores ficam vulneráveis a encostar no NÓ vizinho quando a caixinha é

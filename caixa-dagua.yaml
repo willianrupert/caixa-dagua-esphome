@@ -42,28 +42,34 @@ substitutions:
   #   - Resistor EOL de 10kΩ em paralelo com as boias (NO LADO DA CAIXA!) —
   #     é ele que torna o cabo rompido detectável.
   #
-  # AS DUAS BOIAS TÊM LÓGICA OPOSTA — e isso é deliberado (2026-08-25):
-  #   - Boia MÍNIMA (1kΩ):  FECHA seca  (abre quando a água sobe até ela)
-  #   - Boia MÁXIMA (4.7kΩ): FECHA molhada (a orientação de transbordo, que é
-  #     requisito hidráulico da boia de cima e não se mexe)
-  # Não é descuido nem sobra de uma versão anterior: é essa oposição que faz
-  # cada estado ser dominado por um resistor DIFERENTE (1k, 10k, 4.7k∥10k) e
-  # garante folga de tensão entre eles. Com as duas na mesma lógica, dois
-  # estados normais caem a ~90mV um do outro e a leitura vira loteria.
+  # AS DUAS BOIAS FECHAM SECAS (contato fecha com a água ABAIXO delas), e a
+  # razão é fail-safe, não convenção. Em 2026-08-25 as duas foram giradas 180°
+  # para tratar um transbordo e o desenho inteiro foi reavaliado: girar quebra
+  # DUAS coisas de uma vez. A causa do transbordo era uma infiltração na
+  # entrada de água da caixa, resolvida na hidráulica — que é onde problema
+  # hidráulico se resolve. NÃO GIRE AS BOIAS. Detalhes em
+  # MEMORIAL-DESCRITIVO.md 4.1.1; o resumo é:
   #
-  # Tensões resultantes — repare que NÃO são monotônicas com o nível:
-  #   cabo ROMPIDO / sem boia (circuito aberto)  ~3.30V  -> FALHA SENSOR
-  #   só EOL (10kΩ)                 = INTERMEDIÁRIO ~2.48V
-  #   máx fechada (4.7k∥10k)        = CHEIA        ~1.62V
-  #   mín fechada (1k∥10k)          = CRÍTICO      ~0.71V
-  #   cabo em CURTO                               ~0.00V  -> FALHA SENSOR
-  # A ordem das comparações abaixo segue a TENSÃO, não o nível d'água — quem
-  # ler isto esperando "quanto mais cheio, mais tensão" erra o mapeamento.
+  #   1) "Cheia" aqui é a AUSÊNCIA de qualquer contato fechado (só o EOL no
+  #      laço). Reed morto, fio rompido ou emenda corroída => ausência de
+  #      sinal => lê CHEIA => desliga a bomba. Se a máxima fechasse molhada,
+  #      "cheia" passaria a EXIGIR um contato vivo, e o mesmo defeito viraria
+  #      "ainda não encheu" => bomba segue => transbordo.
+  #   2) Com as duas fechando molhadas, "intermediário" (1k∥10k = 909R) e
+  #      "cheia" (1k∥4.7k∥10k = 762R) caem a ~90mV um do outro — dois estados
+  #      NORMAIS, que se alternam a cada enchimento, indistinguíveis dentro da
+  #      tolerância de +-5% dos resistores.
+  #
+  # Tensões resultantes:
+  #   cabo ROMPIDO / sem boia (circuito aberto)  ~3.3V  -> FALHA SENSOR
+  #   ambas abertas (10kΩ)          = CHEIA        ~2.48V
+  #   só máx fechada (4.7k∥10k)     = INTERMEDIÁRIO ~1.62V
+  #   ambas fechadas (1k∥4.7k∥10k)  = CRÍTICO      ~0.62V
+  #   cabo em CURTO                               ~0.0V  -> FALHA SENSOR
   adc_sem_sensor_acima_de: "2.90"     # Volts — acima disso: rompido/sem boia
-  adc_intermediario_acima_de: "2.05"  # Volts — acima disso (e abaixo de 2.90): INTERMEDIÁRIO
-  adc_cheia_acima_de: "1.15"          # Volts — acima disso (e abaixo de 2.05): CHEIA
+  adc_cheia_acima_de: "2.10"          # Volts
+  adc_intermediario_acima_de: "1.10"  # Volts
   adc_curto_abaixo_de: "0.35"         # Volts — abaixo disso: cabo em curto
-                                      # (entre 0.35 e 1.15: CRÍTICO)
   sensor_falho_leituras: "15"         # leituras (1s) fora das faixas p/ declarar falha
 
   # Bomba Intech BSCA2 1/4 HP 220V — corrente máxima/mínima e o tempo máximo
@@ -635,14 +641,10 @@ sensor:
             }
             id(sensor_falho_contagem) = 0;
 
-            // Ordem por TENSÃO, não por nível: as boias têm lógica oposta
-            // (mínima fecha seca, máxima fecha molhada — ver substitutions),
-            // então a tensão NÃO cresce com o nível. Intermediário é o mais
-            // ALTO dos três (só o EOL no laço), crítico é o mais baixo.
             int bruto;
-            if (x > ${adc_intermediario_acima_de})  bruto = 1;  // ~2.48V Intermediário
-            else if (x > ${adc_cheia_acima_de})     bruto = 0;  // ~1.62V Cheia
-            else                                    bruto = 2;  // ~0.71V Crítico
+            if (x > ${adc_cheia_acima_de})              bruto = 0;  // Cheia
+            else if (x > ${adc_intermediario_acima_de}) bruto = 1;  // Intermediário
+            else                                        bruto = 2;  // Crítico
 
             // ----- Histerese: só aceita mudança após N leituras estáveis -----
             // Evita que a marola na boia (E2<->E3) pisque o LED e desgaste a

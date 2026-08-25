@@ -114,28 +114,61 @@ Se o sistema salvasse "bomba ligada" e religasse o relé direto no boot, haveria
 - **Resistor de fim de linha (EOL) de 10 kΩ** em paralelo com as boias, **instalado no lado da caixa** (técnica de central de alarme): é ele que torna o rompimento do cabo eletricamente detectável.
 - Os três componentes em **paralelo**, descendo ao quadro por apenas **2 fios**.
 - **Pull-up de 3.3 kΩ** do nó do ADC para 3.3 V (referência do divisor, no quadro).
-- **As duas boias têm lógica OPOSTA, e isso é o que faz o circuito funcionar** (decidido em 2026-08-25, ver 4.1.1):
-  - **Mínima (1 kΩ):** fecha **seca** — abre quando a água sobe até ela.
-  - **Máxima (4.7 kΩ):** fecha **molhada** — orientação exigida pela hidráulica de transbordo, não negociável.
+- **Fiação das boias:** contato **fecha quando a água está ABAIXO** da boia — as duas. Isso é requisito de fail-safe, não convenção arbitrária: ver 4.1.1.
 
 | Situação | Resistência do laço | Tensão no ADC | Classificação |
 |---|---|---|---|
-| Cabo **rompido** / boias desconectadas | ∞ | **~3.30 V** | ⚠️ FALHA SENSOR |
-| Só o EOL (mínima e máxima abertas) | 10 kΩ | **~2.48 V** | **Intermediário** |
-| Máxima fechada (molhada) | 4.7k ∥ 10k = 3.2 kΩ | **~1.62 V** | Caixa **cheia** |
-| Mínima fechada (seca) | 1k ∥ 10k = 909 Ω | **~0.71 V** | **Crítico** |
+| Cabo **rompido** / boias desconectadas | ∞ | **~3.3 V** | ⚠️ FALHA SENSOR |
+| Ambas abertas | 10 kΩ | **~2.48 V** | Caixa **cheia** |
+| Só máxima fechada | 4.7k ∥ 10k = 3.2 kΩ | **~1.62 V** | **Intermediário** |
+| Ambas fechadas | 1k ∥ 4.7k ∥ 10k = 762 Ω | **~0.62 V** | **Crítico** |
 | Cabo em **curto** | ~0 | **~0 V** | ⚠️ FALHA SENSOR |
 
-- **A tensão não é monotônica com o nível** — o intermediário é o mais alto dos três, não o do meio. Código que assume "mais cheio, mais tensão" erra o mapeamento; a cadeia de comparações em `caixa-dagua.yaml` segue a tensão, e diz isso em comentário.
-- Limiares calibráveis: falha >2.90 V; intermediário >2.05 V; cheia >1.15 V; curto <0.35 V.
+- Limiares calibráveis: falha >2.90 V; cheia >2.10 V; intermediário >1.10 V; curto <0.35 V.
 
-#### 4.1.1 Por que as boias têm lógica oposta
+#### 4.1.1 Por que as duas boias fecham secas — e por que não se gira
 
-As duas boias foram giradas 180° por **necessidade hidráulica** — especialmente a de cima, cuja orientação define o comportamento de transbordo. Com ambas na mesma lógica (fechando molhadas), a matemática do divisor colapsa: "intermediário" vira 1k ∥ 10k = 909 Ω e "cheia" vira 1k ∥ 4.7k ∥ 10k = 762 Ω — **~90 mV de separação entre dois estados normais**, que se alternam toda vez que a caixa enche. Isso não sobrevive à tolerância de ±5% dos resistores, e a distinção perdida é justamente a mais crítica do sistema (cheia = desliga a bomba; intermediário = continua enchendo).
+Em 2026-08-25 as duas boias foram giradas 180° para tratar um transbordo, e a
+reavaliação que isso forçou mostrou que girar quebra **duas** coisas
+independentes. A causa real do transbordo era uma infiltração na entrada de
+água da caixa (vazamento pequeno e contínuo), corrigida na hidráulica — que é
+onde problema hidráulico se resolve. As boias voltaram à orientação original.
+Fica registrado para que ninguém refaça o caminho:
 
-Revertendo **só a mínima**, cada estado passa a ser dominado por um resistor diferente (1k, 10k, 4.7k∥10k) e a menor folga entre estados vizinhos sobe de **0,09 V para 0,71 V** — oito vezes maior. Ganho colateral: imunidade a resistência de contato. Na configuração colapsada, ~120 Ω de emenda oxidada num reed já fazia "cheia" ser lida como "intermediário" (bomba continua, transborda); na configuração adotada, 200 Ω de contato movem a leitura ~20 mV.
+**1. "Cheia" precisa ser a ausência de sinal, não a presença.** Com as boias
+fechando secas, caixa cheia = as duas abertas = só o EOL no laço. Um reed
+morto, um fio rompido ou uma emenda corroída produzem exatamente a mesma
+leitura de "aberto" — ou seja, **defeito no ramo da máxima faz o sistema ler
+"cheia" e desligar a bomba**. Invertendo a máxima, "cheia" passaria a exigir
+um contato vivo e fechado, e o mesmo defeito viraria "ainda não encheu":
+bomba segue ligada, transbordo, com o inching de 10 min como única rede. É a
+diferença entre falhar para o lado seguro e falhar para o lado que molha a
+casa. (O EOL **não** cobre esse caso: ele detecta rompimento no trecho de 2
+fios compartilhado; um rompimento só no ramo da máxima deixa o laço vivo
+pelos outros ramos.)
 
-A caixinha de resina já estava **selada** quando isso foi descoberto, então trocar os resistores de lugar (mínima↔máxima), que seria a outra saída, não era possível — a correção teve que ser mecânica, na orientação da boia.
+**2. Com as duas fechando molhadas, a matemática do divisor colapsa.**
+"Intermediário" viraria 1k ∥ 10k = 909 Ω e "cheia" viraria 1k ∥ 4.7k ∥ 10k =
+762 Ω — **~90 mV de separação entre dois estados normais**, que se alternam a
+cada enchimento, indistinguíveis dentro da tolerância de ±5% dos resistores.
+E a distinção perdida é a mais crítica do sistema: cheia desliga a bomba,
+intermediário continua enchendo. Na orientação correta a menor folga entre
+estados vizinhos é ~0,86 V, e ~120 Ω de emenda oxidada (que na configuração
+colapsada já bastavam para confundir os dois) passam a mover a leitura
+poucos milivolts.
+
+**O que a orientação correta troca em retorno:** um contato **colado fechado**
+na máxima passa a ser o modo inseguro (lê "intermediário" com a caixa cheia →
+bomba segue). É uma troca deliberada e favorável — reed de baixa corrente
+soldando é bem menos provável que fio rompido ou contato corroído, e o
+inching cobre o caso, com a mensagem que ele já grava apontando para o lugar
+certo (*"N min sem encher - verificar boia superior"*).
+
+**Independente da orientação:** boia travada mecanicamente na posição baixa
+(lodo, braço emperrado) significa "ainda não encheu" nos dois desenhos, e
+boia mínima morta nunca produz "crítico" — logo a auto-partida, que exige
+`lvl == 2`, nunca dispara e a caixa seca em silêncio. Girar as boias não
+resolvia nenhum dos dois.
 - **FALHA SENSOR** precisa persistir por 15 leituras (15 s) para disparar — aí o sistema entra em **Pausa Automática (E8, amarelo piscando)** e registra o motivo em "Última Ocorrência". Um pino flutuando (nada conectado, caso da bancada) também cai aqui.
 - **Capacitor cerâmico 100 nF** entre o pino ADC e GND para filtrar ruído do cabo.
 - **Histerese anti-marola:** mudança de nível só é aceita após **4 leituras consecutivas** (4 s) — evita que a ondulação da água na boia cause oscilação E2↔E3, piscadas no LED e gravações desnecessárias na flash.
@@ -143,25 +176,20 @@ A caixinha de resina já estava **selada** quando isso foi descoberto, então tr
 **Pendência — o "estado fantasma" (boia mínima presa) não é distinguível do
 crítico com os resistores atuais.** Existe uma 6ª combinação, fisicamente
 impossível em operação normal mas alcançável por defeito mecânico: mínima
-travada **fechada** (lodo/sujeira segurando o flutuador em posição de seca)
-enquanto a máxima está fechada de verdade (molhada, caixa cheia) —
-1k ∥ 4.7k ∥ 10k ≈ 762 Ω, **~0.62 V**. Avaliado e **não implementado**:
-762 Ω fica próximo demais dos 909 Ω do crítico normal (~90 mV) para separar
-com segurança usando resistores de tolerância padrão (±5%) — uma janela de
+travada fechada (lodo/sujeira) enquanto a máxima lê aberta de verdade —
+1k ∥ 10k ≈ 909 Ω, **~0.71 V**. Avaliado e **não implementado**: 909 Ω fica
+próximo demais dos 762 Ω do crítico normal (~90 mV) para separar com
+segurança usando resistores de tolerância padrão (±5%) — uma janela de
 detecção ali tem risco real de confundir as duas coisas nos dois sentidos:
 ler "crítico" de verdade como falha (trava a bomba à toa) ou ler o defeito
-mecânico como "crítico" normal (liga a bomba com a mínima mentindo).
-Hoje esse 6º caso cai silenciosamente em **Crítico (E2)** e liga a bomba
-com a caixa cheia — o transbordo fica por conta do inching (10 min), que é
-a rede de segurança, não a solução.
+mecânico como "crítico" normal (liga a bomba com a mínima mentindo). Hoje
+esse 6º caso cai silenciosamente em **Crítico (E2)**, que liga a bomba.
 
-Isto **não é regressão da mudança de orientação**: a mesma lacuna existia
-na configuração anterior, com os mesmos ~90 mV de aperto, só que entre
-outro par de valores. É consequência de escolher 1k/4.7k/10k, que separa
-bem as 3 combinações do caminho normal mas não a 4ª. Solução de verdade
-exigiria resistores escolhidos para separar as **4** combinações possíveis
-— mudança de projeto, não de software, e a caixinha já está potada.
-Registrar para a próxima geração de sensores de nível.
+É consequência de escolher 1k/4.7k/10k, que separa bem as 3 combinações do
+caminho normal mas não a 4ª. Solução de verdade exigiria resistores
+escolhidos para separar as **4** combinações possíveis — mudança de
+projeto, não de software, e a caixinha já está potada. Registrar para a
+próxima geração de sensores de nível.
 
 ### 4.2 Monitoramento de corrente (PZEM-004T)
 - PZEM-004T (versão 10A, shunt interno) na fase de 220 V da bomba; dados via serial (UART) para o ESP32.
