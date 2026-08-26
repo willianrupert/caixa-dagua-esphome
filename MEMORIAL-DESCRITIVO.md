@@ -49,7 +49,7 @@ Se o sistema salvasse "bomba ligada" e religasse o relé direto no boot, haveria
 | Estado | Nome | Descrição |
 |---|---|---|
 | E0 | Standby | Caixa OK, sistema pronto. LED apagado. |
-| E1 | Pré-partida | Delay de 5 s antes de ligar a bomba. |
+| E1 | Pré-partida | Janela de 300 ms entre decidir e fechar o contator. **Sem cor própria**: mostra já a cor do estado que vai assumir (azul ou roxo) — ver 3.2. |
 | E2 | Recalque (Crítico) | Enchendo com nível crítico. LED Roxo/Pink. |
 | E3 | Recalque (Intermediário/Manual) | Enchendo em nível intermediário ou por comando manual. LED Azul. |
 | E4 | Finalização (Sucesso) | Caixa encheu. LED Verde por 1 minuto. |
@@ -83,7 +83,7 @@ Se o sistema salvasse "bomba ligada" e religasse o relé direto no boot, haveria
 |---|---|
 | Modo Pausa (E8) | Permanece **travado em E8** (Amarelo). |
 | Standby (E0) ou Finalização (E4) | Vai direto para **E0** (Pronto). |
-| Pré-partida (E1) ou Recalque (E2/E3) | Avalia a boia superior. Se a caixa **não** está cheia → **E1 (Pré-partida)**: roda o delay de 5 s, LED pisca as cores correspondentes, liga a bomba e reativa o monitor de corrente do PZEM **do zero** (com blanking de 5 s). |
+| Pré-partida (E1) ou Recalque (E2/E3) | Avalia a boia superior. Se a caixa **não** está cheia → **E1 (Pré-partida)**: roda a janela de 300 ms, liga a bomba e reativa o monitor de corrente do PZEM **do zero** (com blanking de 5 s). |
 | Falha (E6/E7) | Retorna ao estado de falha com LED piscando, **exigindo clique curto** para destravar (o usuário fica sabendo que houve falha antes do apagão). |
 
 ---
@@ -93,7 +93,7 @@ Se o sistema salvasse "bomba ligada" e religasse o relé direto no boot, haveria
 | # | Situação | Cor |
 |---|---|---|
 | 1 | Caixa OK / Standby | **Apagado** |
-| 2 | Caixa vazia (aguardando) | **Vermelho sólido** |
+| 2 | Pré-partida (E1) | **A cor do destino** — azul se vai para E3, roxo se vai para E2. Ver 3.2 |
 | 3 | Enchendo — nível crítico | **Roxo/Pink** (Vermelho + Azul simultâneos) |
 | 4 | Enchendo — nível intermediário / manual | **Azul sólido** |
 | 5 | Caixa encheu (sucesso) | **Verde sólido por 1 minuto** |
@@ -126,6 +126,42 @@ maior que o intervalo entre passos (70 ms), para que cada comando
 interrompa o fade anterior no meio. A cor nunca "chega e senta" — é
 movimento contínuo, não 24 saltos.
 
+
+### 3.2 Por que o E1 não tem cor própria
+
+Até 2026-08-26 o E1 Pré-partida acendia **vermelho sólido** por 5 segundos
+antes de ligar a bomba. Duas coisas estavam erradas nisso.
+
+**A cor mentia.** Vermelho sólido está definido na tabela acima como "caixa
+vazia". Numa partida manual com a caixa em nível intermediário, o sistema
+anunciava vazio quando não estava — e a cor é a interface deste projeto,
+então isso não é detalhe estético.
+
+**A espera custava mais do que valia.** Os 5 segundos existiam para anunciar
+a partida a quem estivesse por perto. Mas quem dá o clique já está na frente
+do botão e não precisa ser avisado do que acabou de mandar fazer; e do lado
+da partida automática não há ninguém olhando para ser avisado. O que sobrava
+era uma interface que parecia travada depois do toque.
+
+**O que passou a valer:** a janela caiu para **300 ms** e o E1 mostra desde
+já a cor do estado que vai assumir — azul se vai para E3, roxo se vai para
+E2. Na prática o LED responde ao toque instantaneamente e não pisca uma cor
+intermediária no caminho.
+
+**O passo lógico continua existindo**, e não é decorativo: o
+`pre_partida_timer` relê o estado antes de fechar o contator, então um clique
+longo (pausa) ou uma mudança de nível dentro da janela ainda abortam a
+partida — incluindo o caso "encheu na espera", que devolve para E0 sem ligar
+a bomba.
+
+> ⚠️ A condição que escolhe a cor do E1 em `goto_state` **espelha** a decisão
+> do `pre_partida_timer`. São dois lugares que precisam concordar: se um dia
+> a regra de E2 vs E3 mudar, mude nos dois, senão o LED anuncia uma cor e o
+> sistema entra em outra.
+
+**Consequência colateral boa:** vermelho **sólido** deixou de ser usado.
+Sobrou só o vermelho **piscando** do E6 (rotor preso), o que elimina a
+ambiguidade entre "aviso" e "falha" na mesma cor.
 ---
 
 ## 4. Sensores e Filtros

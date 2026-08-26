@@ -31,7 +31,7 @@ stateDiagram-v2
     [*] --> E9: energia voltou
     E9: E9 Boot Seguro
     E0: E0 Standby (LED apagado)
-    E1: E1 Pré-partida (vermelho, 5s)
+    E1: E1 Pré-partida (300ms, cor do destino)
     E2: E2 Recalque crítico (roxo)
     E3: E3 Recalque interm./manual (azul)
     E4: E4 Caixa cheia (verde, 1 min)
@@ -74,7 +74,7 @@ stateDiagram-v2
 | Cor | Significado |
 |---|---|
 | ⚫ Apagado | Standby — tudo OK |
-| 🔴 Vermelho sólido | Caixa vazia, partida em 5 s |
+
 | 🟣 Roxo/Pink | Enchendo — nível crítico |
 | 🔵 Azul sólido | Enchendo — intermediário ou manual |
 | 🟢 Verde (1 min) | Caixa encheu! |

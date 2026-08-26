@@ -115,7 +115,14 @@ substitutions:
   # DE CONFIGURAÇÃO, mais abaixo). Os valores abaixo são só os defaults de
   # fábrica usados na 1ª partida (depois disso quem manda é o valor salvo).
 
-  tempo_pre_partida: 5s    # delay E1 antes de ligar a bomba
+  # Janela entre "decidiu bombear" e o relé fechar. Era 5s, com o LED em
+  # vermelho sólido anunciando a partida; virou 300ms em 2026-08-26 porque o
+  # anúncio custava mais do que valia. Quem dá o clique já está na frente do
+  # botão e não precisa ser avisado, e a espera longa fazia a interface
+  # parecer travada. O passo continua existindo: o pre_partida_timer relê o
+  # estado antes de fechar o contator, então uma pausa ou uma mudança de
+  # nível no meio ainda aborta a partida.
+  tempo_pre_partida: 300ms
   tempo_verde_sucesso: 60s # duração do LED verde em E4
   blanking_ms: "5000"      # cegueira de partida do PZEM (ms)
 
@@ -176,6 +183,15 @@ ota:
 wifi:
   # NUNCA reiniciar por falta de Wi-Fi — a lógica é 100% local.
   reboot_timeout: 0s
+
+  # O padrão do ESPHome para ESP32 é LIGHT, e aqui ele quebrava a integração:
+  # com o rádio dormindo entre beacons, o ping na LAN oscilava em dente-de-serra
+  # de 61ms a 409ms e o handshake da API do Home Assistant não completava — o
+  # dispositivo pingava, anunciava por mDNS e abria a porta 6053, mas ficava
+  # "unavailable" no HA (diagnosticado em 2026-08-26, com tudo já montado).
+  # Esta placa é alimentada pela rede, não por bateria: não há energia a
+  # economizar, e o preço era a telemetria do sistema de controle.
+  power_save_mode: NONE
   networks:
     - ssid: !secret wifi_ssid
       password: !secret wifi_password
@@ -344,7 +360,16 @@ script:
           } else {
             float r = 0, g = 0, b = 0;
             switch (novo) {
-              case 1: r = 1;        break;  // Vermelho: caixa vazia, aguardando
+              // E1 não tem cor própria: mostra JÁ a cor do estado que vai
+              // assumir. Antes era vermelho sólido, que na tabela de cores
+              // significa "caixa vazia" — dizer isso durante uma partida
+              // manual com a caixa pela metade era a interface mentindo.
+              // A condição abaixo espelha exatamente a decisão do
+              // pre_partida_timer; se uma mudar, a outra tem que mudar junto.
+              case 1:
+                if (!id(manual_mode) && id(water_level) == 2) { r = 1; b = 1; }  // roxo, vira E2
+                else                                          { b = 1; }        // azul, vira E3
+                break;
               case 2: r = 1; b = 1; break;  // Roxo/Pink: enchendo crítico
               case 3: b = 1;        break;  // Azul: intermediário/manual
               case 4: g = 1;        break;  // Verde: sucesso
@@ -734,6 +759,26 @@ sensor:
           window_size: 5
           send_every: 1
           send_first_at: 1
+      # ---- Correção de ganho do ADC (medida em campo, 2026-08-26) ----
+      # Com a caixa em nível intermediário, o laço mediu 3.2kΩ no multímetro
+      # (exatamente o 4.7k∥10k previsto) mas o ADC reportava 1.05V onde a
+      # conta do divisor dá 1.34V — 22% baixo. Como a resistência foi
+      # confirmada com instrumento, o erro está no ADC, não no circuito: o
+      # ADC do ESP32-S3 com atenuação de 12dB tem ganho impreciso.
+      #
+      # Corrigir aqui, e não nos limiares, é deliberado: assim a "Tensão
+      # Boias" publicada no Home Assistant volta a bater com a tabela do
+      # memorial, e quem for diagnosticar daqui a dois anos compara o valor
+      # lido com o documentado sem precisar saber que existe um fator oculto.
+      # Os quatro limiares seguem sendo os de projeto.
+      #
+      # Ponto de ancoragem único (mais a origem), então assume ganho linear.
+      # A validação que falta é o topo da escala: com o Fio A solto, a leitura
+      # corrigida tem que passar de 2.70V para a detecção de cabo rompido
+      # disparar. Ver MANUAL-FIACAO.md 4.
+      - calibrate_linear:
+          - 0.00 -> 0.00
+          - 1.05 -> 1.34
     on_value:
       then:
         - lambda: |-
