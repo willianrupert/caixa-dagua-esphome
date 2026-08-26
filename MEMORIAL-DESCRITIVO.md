@@ -290,6 +290,44 @@ morador vai até a grade olhar de qualquer forma.
 Detalhamento de fiação, valores de pino e o checklist de instalação estão
 no [Manual de Fiação, seção 9](MANUAL-FIACAO.md#9-expansão--sensores-de-porta-microswitches).
 
+### 4.4 O botão é catodo comum — e o YYNMOS-4 saiu do projeto
+
+O projeto assumiu **anodo comum** desde o início e dimensionou um módulo
+YYNMOS-4 (chave MOSFET *low-side*, 4 canais) para acionar o LED. Em
+2026-08-26, com o botão em mãos e conferido no multímetro, ele se revelou
+**catodo comum**: um `-` compartilhado e três `+` independentes.
+
+Isso invalidou o módulo. O YYNMOS só sabe puxar a saída para o GND, o que
+serve para anodo comum — o `+` fica fixo em 5 V e cada cor é puxada para
+baixo individualmente. Com catodo comum o `-` já está permanentemente no
+GND, e é o **positivo** de cada cor que precisa ser chaveado. Ligado assim
+mesmo, ou nada acende, ou as três acendem juntas sem controle independente.
+
+**Solução adotada: cada anodo direto no GPIO**, com resistor de 100 Ω em
+série, e o catodo comum no GND. Simplifica o quadro — um módulo a menos,
+três fios a menos, e some a necessidade dos resistores de 220 Ω que o
+YYNMOS exigia por não limitar corrente.
+
+**A troca não custou uma linha de firmware**, e vale registrar por quê: a
+polaridade coincide nas duas topologias. Com o YYNMOS, PWM alto fechava o
+canal e puxava o catodo ao GND (acende). Ligado direto, PWM alto põe o anodo
+em 3,3 V (acende). Nos dois casos *PWM alto = aceso*, então a ausência de
+`inverted` continua correta — por coincidência, não por projeto.
+
+**O que a mudança custou: o LED saiu de 5 V para 3,3 V.** O botão é
+especificado para 3–6 V, então opera na faixa, mas LED azul e verde têm
+tensão direta perto de 3,0 V e a margem ficou pequena. Se acenderem bem mais
+fracos que o vermelho, as cores compostas se deslocam — roxo e amarelo
+puxam para vermelho, e o branco do alarme de contator soldado vira rosado.
+Como **a cor é a interface** deste projeto, isso é funcional e não estético:
+conferir o brilho das três, de longe, antes de fechar a cozinha.
+
+A alternativa, se o desequilíbrio incomodar, é chaveamento *high-side* em
+5 V — e não com PNP ou P-MOSFET ligado direto ao GPIO, porque nível lógico
+de 3,3 V não desliga um transistor cuja fonte está em 5 V (o transistor
+ficaria parcialmente conduzindo). Exigiria um estágio inversor a mais por
+canal. Só vale se a medição de brilho reprovar.
+
 ---
 
 ## 5. Bill of Materials (BOM) Definitivo
@@ -323,7 +361,7 @@ no [Manual de Fiação, seção 9](MANUAL-FIACAO.md#9-expansão--sensores-de-por
 | Qtd | Item | Observações |
 |---|---|---|
 | 1 | **ESP32-S3** (via USB, firmware ESPHome) | Cérebro local: FSM, leitura das boias, PWM dos LEDs |
-| 1 | Placa interface MOSFET **YYNMOS-4** (4 canais, 3 em uso) | Recebe 3.3 V do ESP32, libera 5 V nos bornes. Canais 1–3: LED RGB da cozinha; canal 4 não é usado |
+| 3 | Resistor 100 Ω (série do LED) | Um por cor, entre GPIO16/17/18 e os anodos R/G/B do botão. **O módulo YYNMOS-4 saiu do projeto** em 2026-08-26, quando o botão se revelou catodo comum — ver 4.4 |
 
 **Potência e Acionamento (cascata):**
 | Qtd | Item | Observações |
@@ -342,8 +380,8 @@ no [Manual de Fiação, seção 9](MANUAL-FIACAO.md#9-expansão--sensores-de-por
 ### 5.4 Cozinha (Interface Humana)
 | Qtd | Item | Observações |
 |---|---|---|
-| 1 | Botão pulsador antivandalismo inox 19 ou 22 mm | Momentâneo (sem trava), LED RGB integrado 3–6 V, **anodo comum** |
-| 1 | Cabo de rede UTP Cat5e/Cat6 | Único cabo quadro → cozinha, usando as 8 vias: 1× 5 V constante (anodo), 3× R/G/B (canais 1–3 do YYNMOS-4), 2× contato seco do botão (GND + pino digital), 2× contato seco da porta da cozinha (GND + pino digital, ver 5.5) |
+| 1 | Botão pulsador antivandalismo inox 19 ou 22 mm | Momentâneo (sem trava), LED RGB integrado 3–6 V, **catodo comum** (confirmado no multímetro — ver 4.4) |
+| 1 | Cabo de rede UTP Cat5e/Cat6 | Único cabo quadro → cozinha, usando as 8 vias: 1× GND (catodo comum do LED), 3× anodos R/G/B (GPIO16/17/18 via resistor), 2× contato seco do botão (GND + pino digital), 2× contato seco da porta da cozinha (GND + pino digital, ver 5.5) |
 | 1 | Espelho cego premium (opcional) | Se instalado em caixa 4x2 de parede em vez de embutido na marcenaria |
 
 ### 5.5 Expansão — Sensores de Porta (Microswitches)
@@ -376,7 +414,7 @@ no [Manual de Fiação, seção 9](MANUAL-FIACAO.md#9-expansão--sensores-de-por
 
 - **FSM:** implementada em `caixa-dagua.yaml` com `globals` (`restore_value: true`) + `preferences: flash_write_interval: 0s` — grava na NVS imediatamente, mas só quando o estado muda (regra da seção 1.2).
 - **Botão:** `binary_sensor` (GPIO com pull-up) usando `on_multi_click` para separar clique curto (< 1.0 s) de clique longo (≥ 1.5 s, dispara ainda pressionado).
-- **LED RGB:** 3 saídas `ledc` (PWM) → `light: rgb` com `transition` para os fades suaves. O botão é anodo comum, **mas** o YYNMOS-4 é chave low-side: sinal ALTO do ESP32 liga o canal e acende o LED → **não usar `inverted`** (só inverteria se o LED fosse ligado direto no GPIO).
+- **LED RGB:** 3 saídas `ledc` (PWM) → `light: rgb` com `transition` para os fades suaves. O botão é **catodo comum** e cada anodo sai direto do GPIO, com resistor em série: sinal ALTO acende → **não usar `inverted`**. Ver 4.4 para por que o YYNMOS-4 saiu e por que a polaridade não mudou.
 - **Boias:** `adc` sensor no pino analógico com filtro `median`, histerese de 4 leituras e supervisão do laço EOL (faixas válidas + zonas de falha).
 - **PZEM-004T:** componente nativo `pzemac` (V3/Modbus) via UART.
 - **Sensores de porta (expansão):** 3 `binary_sensor: gpio` independentes (Grade Principal, Grade Secundária, Trava Madeira Cozinha), pull-up interno, contato NA, **sem** `inverted` — a polaridade oposta ao botão é deliberada, ver 4.3. Nas grades, os 2 microswitches ficam em série na própria fiação (não há `binary_sensor: template` combinando pinos — a série já faz o "os dois confirmam"). Não participam da FSM da bomba — são só observabilidade.

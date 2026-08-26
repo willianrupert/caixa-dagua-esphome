@@ -38,9 +38,9 @@ substitutions:
   pino_botao: GPIO5       # contato seco do botão da cozinha (via UTP)
   pino_uart_tx: GPIO9     # -> RX do PZEM-004T
   pino_uart_rx: GPIO10    # <- TX do PZEM-004T
-  pino_led_r: GPIO16      # canal 1 do YYNMOS-4 (pwm1)
-  pino_led_g: GPIO17      # canal 2 do YYNMOS-4 (pwm2)
-  pino_led_b: GPIO18      # canal 3 do YYNMOS-4 (pwm3)
+  pino_led_r: GPIO16      # -> anodo R do botão, via resistor em série
+  pino_led_g: GPIO17      # -> anodo G do botão, via resistor em série
+  pino_led_b: GPIO18      # -> anodo B do botão, via resistor em série
   pino_rele: GPIO21       # -> módulo relé 5V (IN, ativo em HIGH) -> contator
 
   # NeoPixel embutido na própria placa S3 — espelha o LED do botão, para que
@@ -899,7 +899,7 @@ sensor:
 #  SAÍDAS
 # =====================================================================
 switch:
-  # Relé: módulo pronto 5V ligado direto no ESP32 (sem passar pelo YYNMOS-4).
+  # Relé: módulo pronto 5V ligado direto no ESP32.
   # Módulo é ativo em HIGH (trigger jumper em "H"): GPIO7 em nível ALTO liga
   # o relé — por isso SEM inverted (turn_on() já manda HIGH direto).
   # Confirme no datasheet do seu módulo o estado padrão do IN quando o GPIO
@@ -914,8 +914,19 @@ switch:
     internal: true
 
 output:
-  # YYNMOS-4 é chave low-side: sinal ALTO no canal acende o LED
-  # (anodo comum no 5V). Por isso NÃO se usa inverted aqui.
+  # O botão da cozinha é CATODO COMUM (um "-" compartilhado no GND, três "+"
+  # independentes), descoberto com o botão em mãos em 2026-08-26. Cada anodo
+  # vai direto no GPIO, com resistor em série — sem YYNMOS, que era chave
+  # low-side e só serve para anodo comum. O módulo saiu do projeto.
+  #
+  # A polaridade dá certo nas duas topologias, e por isso a troca não custou
+  # uma linha de firmware: com o YYNMOS, PWM alto fechava o canal e puxava o
+  # catodo ao GND; ligado direto, PWM alto põe o anodo em 3.3V. Nos dois
+  # casos PWM alto = aceso, logo NÃO se usa inverted aqui.
+  #
+  # O LED é alimentado por 3.3V (o GPIO), não pelos 5V de antes. O botão é
+  # especificado para 3-6V, então está na faixa — mas azul e verde têm tensão
+  # direta perto de 3.0V e sobra pouca margem. Ver MANUAL-FIACAO.md 5.1.
   - platform: ledc
     id: out_r
     pin: ${pino_led_r}

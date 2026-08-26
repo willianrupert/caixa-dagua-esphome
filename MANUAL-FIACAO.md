@@ -9,7 +9,7 @@ Guia prático para montar o quadro e puxar os cabos **antes** de energizar e gra
 ## 0. Antes de começar
 
 - **Desligue o disjuntor geral** do circuito da bomba antes de tocar em qualquer fiação de 220 V. Trabalhe com o quadro todo desenergizado até o checklist da seção 7.
-- **Separe fisicamente** a fiação de 220 V (disjuntor → PZEM → contator → bomba) da fiação de sinal (3.3 V/5 V: ESP32, YYNMOS-4, boias, botão). Use canaletas/trilhos diferentes dentro do quadro, ou pelo menos mantenha distância — evita ruído no ADC e risco de contato acidental.
+- **Separe fisicamente** a fiação de 220 V (disjuntor → PZEM → contator → bomba) da fiação de sinal (3.3 V/5 V: ESP32, boias, botão). Use canaletas/trilhos diferentes dentro do quadro, ou pelo menos mantenha distância — evita ruído no ADC e risco de contato acidental.
 - **Cores de fio recomendadas** (NBR 5410): terra verde-amarelo, neutro azul-claro, fase em preto/vermelho/marrom. Para os sinais DC (3.3 V/5 V) use cores que não sejam essas três, para não confundir com a parte de potência.
 - **Bornes de parafuso + terminais** (forquilha ou pino) em toda conexão — projeto é "zero solda" (trilho DIN).
 - Ferramentas: multímetro (essencial — várias etapas abaixo pedem medição antes de energizar), chave de fenda/Philips para bornes, alicate de crimpar terminais, ferramenta de crimpagem RJ45 (se for crimpar o UTP você mesmo).
@@ -34,14 +34,14 @@ REDE 220V ──[disjuntor]──┤                                            
                          │ GPIO16 │  │  │ GPIO18     GPIO4 (ADC boias) │  │
                          │ GPIO17 │  │  │ GPIO9/10   GPIO5 (botão)     │  │
                          │        ▼  ▼  ▼   (UART PZEM)                │  │
-                         │  YYNMOS-4 pwm1-3 (R/G/B)                    │  │
+                         │  (LED do botão sai direto dos GPIOs)        │  │
                          │        │  │  │                              │  │
                          └────────┼──┼──┼──────────────────────────────┼──┘
                                   │  │  │                               │
                           UTP (8 vias)                            L' ──┴──► BOMBA (fase)
                                   │                                N' ─────► BOMBA (neutro)
                                   ▼
-                    COZINHA: botão inox + LED RGB anodo comum
+                    COZINHA: botão inox + LED RGB catodo comum
                              + microswitch da porta de madeira
 
                     CAIXA SUPERIOR: 2 boias reed + R 1k/4.7k/10k(EOL)
@@ -56,8 +56,8 @@ REDE 220V ──[disjuntor]──┤                                            
 ```
 
 - **PZEM-004T** mede a corrente **em série** na fase (L) — a fase passa por dentro do módulo (bornes IN→OUT), não é grampo externo (shunt interno).
-- **YYNMOS-4** é uma chave *low-side* (liga pelo lado do GND): sinal ALTO do ESP32 no canal correspondente fecha aquele canal para o GND. Por isso a lógica de wiring do LED usa **anodo comum em +5V fixo** e cada cor é puxada para baixo pelo canal. Só os canais 1–3 são usados (LED RGB) — o canal 4 não é mais usado.
-- O **relé** é um módulo pronto 5 V ligado **direto no GPIO21 do ESP32** (sem passar pelo YYNMOS-4), porque o ESP32 sozinho não chaveia 220 V — ele aciona o relé de baixa potência, que por sua vez aciona a **bobina do contator**, que é quem efetivamente liga a bomba. O módulo é *ativo em HIGH* (trigger jumper em "H"): o GPIO21 em nível ALTO liga o relé diretamente, sem inversão no ESPHome.
+- O **LED do botão sai direto dos GPIOs do ESP32** (3,3 V), com resistor em série em cada cor. O botão é **catodo comum** — um `−` compartilhado no GND e três `+` independentes — e por isso o módulo YYNMOS-4, que era chave *low-side* e só serve para anodo comum, **saiu do projeto**. Ver 5.1.
+- O **relé** é um módulo pronto 5 V ligado **direto no GPIO21 do ESP32**, porque o ESP32 sozinho não chaveia 220 V — ele aciona o relé de baixa potência, que por sua vez aciona a **bobina do contator**, que é quem efetivamente liga a bomba. O módulo é *ativo em HIGH* (trigger jumper em "H"): o GPIO21 em nível ALTO liga o relé diretamente, sem inversão no ESPHome.
 
 ---
 
@@ -98,10 +98,10 @@ Tabela oficial de pinos (igual ao `substitutions:` do YAML — se mudar aqui, mu
 | `pino_porta_cozinha` | GPIO8 | Microswitch único, porta da cozinha (via UTP via 8) | Entrada digital (pull-up interno) |
 | `pino_uart_tx` | GPIO9 | PZEM-004T, **RX** | Saída serial |
 | `pino_uart_rx` | GPIO10 | PZEM-004T, **TX** | Entrada serial |
-| `pino_led_r` | GPIO16 | YYNMOS-4, **pwm1** | Saída PWM |
-| `pino_led_g` | GPIO17 | YYNMOS-4, **pwm2** | Saída PWM |
-| `pino_led_b` | GPIO18 | YYNMOS-4, **pwm3** | Saída PWM |
-| `pino_rele` | GPIO21 | Módulo relé 5V, pino **IN** (direto, sem passar pelo YYNMOS-4) | Saída digital, ativa em HIGH (sem `inverted`) |
+| `pino_led_r` | GPIO16 | Anodo **R** do botão, via resistor em série | Saída PWM |
+| `pino_led_g` | GPIO17 | Anodo **G** do botão, via resistor em série | Saída PWM |
+| `pino_led_b` | GPIO18 | Anodo **B** do botão, via resistor em série | Saída PWM |
+| `pino_rele` | GPIO21 | Módulo relé 5V, pino **IN** | Saída digital, ativa em HIGH (sem `inverted`) |
 
 ### 3.1 Por que estes pinos, e não os do ESP32-C3
 
@@ -133,12 +133,6 @@ por isso que as boias foram para GPIO4 e não para um pino alto qualquer.
 > Os 3 pinos de porta usam a mesma convenção de contato seco do botão
 > (pull-up interno, fecha para GND), mas **sem** `inverted` — polaridade
 > deliberadamente oposta à do botão. Explicação completa na seção 9.
-
-**YYNMOS-4 — alimentação:**
-- VCC: 5 V (fonte DIN)
-- GND: comum com o ESP32, a fonte 5V e o relé
-- pwm1–pwm3: GPIO16, GPIO17, GPIO18 do ESP32 (nível 3.3 V — o módulo aceita). Canal 4 (IN4/OUT4) não é usado.
-- OUT1–OUT3: cátodos R/G/B do LED da cozinha
 
 **PZEM-004T — alimentação e sinal (além dos bornes de potência da seção 2):**
 - VCC: 5 V (fonte DIN)
@@ -264,18 +258,63 @@ Um único cabo de rede (Cat5e/Cat6) liga o quadro à cozinha, usando as **8 vias
 
 | Via (UTP) | Função | Vai para (no quadro) |
 |---|---|---|
-| 1 | 5 V constante (anodo comum do LED) | Fonte DIN 5 V (direto, **não** passa pelo YYNMOS-4) |
-| 2 | Cátodo R | YYNMOS-4 OUT1 |
-| 3 | Cátodo G | YYNMOS-4 OUT2 |
-| 4 | Cátodo B | YYNMOS-4 OUT3 |
+| 1 | **GND** — catodo comum do LED | GND comum |
+| 2 | Anodo **R** | GPIO16, via resistor em série |
+| 3 | Anodo **G** | GPIO17, via resistor em série |
+| 4 | Anodo **B** | GPIO18, via resistor em série |
 | 5 | Contato seco do botão — GND | GND comum |
 | 6 | Contato seco do botão — sinal | GPIO5 do ESP32 (`pino_botao`) |
 | 7 | Contato seco da porta da cozinha — GND | GND comum |
 | 8 | Contato seco da porta da cozinha — sinal | GPIO8 do ESP32 (`pino_porta_cozinha`) |
 
-- Botão: pulsador antivandalismo inox 19–22 mm, **momentâneo** (sem trava), LED RGB integrado **anodo comum**, 3–6 V.
+- Botão: pulsador antivandalismo inox 19–22 mm, **momentâneo** (sem trava), LED RGB integrado **catodo comum**, 3–6 V.
 - Use conectores RJ45 fêmea/macho nas duas pontas (quadro e cozinha) ou emende direto nos bornes — mas mantenha o par de fios do botão (vias 5/6) junto (par trançado), para reduzir ruído no clique.
-- Confirme com multímetro, no botão isolado (sem o cabo ainda ligado ao quadro), que pressionar fecha o contato entre as vias 5 e 6 e que a resistência do LED entre a via 1 e cada uma das vias 2/3/4 é a de um LED direto (não invertido) — evita descobrir "anodo comum" errado só depois de tudo montado.
+
+### 5.1 O botão é catodo comum — e por isso o YYNMOS-4 saiu do projeto
+
+O projeto assumiu **anodo comum** até 2026-08-26, quando o botão foi conferido
+com multímetro e revelou o contrário: **um `-` compartilhado e três `+`
+independentes**.
+
+Isso invalidou o YYNMOS-4. Ele é chave *low-side* — só sabe puxar a saída
+para o GND —, o que funciona com anodo comum (o `+` fixo, cada cor puxada
+para baixo). Com catodo comum o `-` já está no GND, e é o **positivo** de
+cada cor que precisa ser chaveado. Ligar assim mesmo acenderia as três
+juntas, sem controle independente.
+
+**Solução: cada anodo direto no GPIO**, com resistor em série, e o catodo
+comum no GND. O módulo saiu do projeto — um a menos no quadro, três fios a
+menos, e some a discussão dos 220 Ω que ele exigia.
+
+**A troca não custou uma linha de firmware.** A polaridade dá certo nas duas
+topologias: com o YYNMOS, PWM alto fechava o canal e puxava o catodo ao GND;
+ligado direto, PWM alto põe o anodo em 3,3 V. Nos dois casos PWM alto =
+aceso, então continua sem `inverted`.
+
+> ⚠️ **O LED passou a viver em 3,3 V, não em 5 V.** O botão é especificado
+> para 3–6 V, então está na faixa — mas LED azul e verde têm tensão direta
+> perto de 3,0 V, e sobra pouca margem. **Antes de fechar a cozinha, acenda
+> as três cores e confira o brilho de longe**, não só de perto. Se azul e
+> verde ficarem bem mais fracos que o vermelho, as cores compostas mudam de
+> aparência: roxo puxa para vermelho, amarelo puxa para vermelho, e o branco
+> do alarme de contator soldado vira rosado. Como a cor **é** a interface
+> aqui, isso importa.
+>
+> Se o desequilíbrio incomodar, a saída é chaveamento *high-side* em 5 V —
+> mas não com PNP ou P-MOSFET ligado direto no GPIO, porque nível lógico de
+> 3,3 V não desliga um transistor cuja fonte está em 5 V. Precisaria de um
+> estágio a mais.
+
+**Resistor em série: comece com 100 Ω** em cada cor. Se o brilho ficar baixo,
+meça a corrente (tensão sobre o resistor ÷ 100) antes de reduzir: abaixo de
+~15 mA por cor dá para diminuir ou remover, desde que o botão tenha
+resistores internos — que é o que a especificação de 3–6 V indica. Confirme
+medindo antes de tirar.
+
+**Conferência no botão isolado, antes de ligar ao quadro:** pressionar fecha
+o contato entre as vias 5 e 6; e no modo diodo, ponta **preta** no comum
+(via 1) com a **vermelha** em cada uma das vias 2/3/4 acende a cor
+correspondente.
 
 ---
 
@@ -283,9 +322,9 @@ Um único cabo de rede (Cat5e/Cat6) liga o quadro à cozinha, usando as **8 vias
 
 | Item | Alimenta |
 |---|---|
-| Fonte Hi-Link 5 V / 1 A (módulo AC-DC, não trilho DIN) | ESP32-S3 (via 5V→3.3V do próprio módulo, ou pino 5V se disponível), YYNMOS-4, módulo relé, PZEM-004T (lado lógico), LED da cozinha (via anodo) |
+| Fonte Hi-Link 5 V / 1 A (módulo AC-DC, não trilho DIN) | ESP32-S3 (pino 5V/VIN), módulo relé, PZEM-004T (lado lógico). **O LED do botão não usa os 5 V** — sai dos GPIOs em 3,3 V |
 
-Todo o GND de baixa tensão (ESP32, YYNMOS-4, relé, PZEM lógico, boias, botão) deve ser **um único nó comum**. Não misture esse GND com o neutro (N) do lado de 220 V.
+Todo o GND de baixa tensão (ESP32, relé, PZEM lógico, boias, botão, catodo comum do LED) deve ser **um único nó comum**. Não misture esse GND com o neutro (N) do lado de 220 V.
 
 > ⚠️ **Orçamento de corrente mais apertado que a fonte original (2A → 1A).**
 > Estimativa de consumo simultâneo no pior caso: ESP32-S3 com Wi-Fi ativo
@@ -307,7 +346,7 @@ Com o disjuntor **ainda desligado**:
 1. [ ] Continuidade da bobina do contator (A1/A2) — resistência baixa e finita.
 2. [ ] Tensões do divisor das boias batem com a tabela da seção 4 (medir com multímetro alimentando o nó ADC com 3.3 V de uma fonte de bancada, ou já com o ESP32 ligado via USB antes de energizar a bomba).
 3. [ ] Botão: contato seco fecha/abre corretamente entre as vias 5/6 do UTP.
-4. [ ] LED: anodo comum confirmado (via 1 = +5V, vias 2/3/4 = cátodos R/G/B).
+4. [ ] LED: catodo comum confirmado (via 1 = GND, vias 2/3/4 = anodos R/G/B), e as três cores acendem com brilho parecido em 3,3 V (ver 5.1).
 5. [ ] Fase e neutro não estão trocados nos bornes IN do PZEM-004T.
 6. [ ] Snubber/varistor instalado nos bornes A1/A2 do contator.
 7. [ ] Fiação de 220 V fisicamente separada da fiação de sinal dentro do quadro.
@@ -331,12 +370,12 @@ Ver a lista completa com quantidades e observações no [Memorial Descritivo, se
 - 2× boia reed switch + resistores 1 kΩ / 4.7 kΩ / 10 kΩ (EOL)
 - Disjuntor 6–10 A curva C
 - Fonte Hi-Link 5 V/1 A
-- ESP32-S3 + YYNMOS-4 (4 canais, só 3 em uso — LED RGB)
+- ESP32-S3 (o LED do botão sai direto dos GPIOs — sem módulo MOSFET)
 - Módulo relé 5 V 1 canal, com optoacoplador (jumper JD-VCC) + Contator monofásico 25 A AC-3 (bobina 220 V)
 - PZEM-004T 10 A (shunt interno)
 - Capacitor cerâmico 100 nF (código **104**) + resistor pull-up 4.7 kΩ
 - Supressor de surto (snubber RC ou varistor 275 V)
-- Botão inox antivandalismo com LED RGB anodo comum + cabo UTP Cat5e/6
+- Botão inox antivandalismo com LED RGB catodo comum + cabo UTP Cat5e/6 + 3 resistores de 100 Ω
 - 5× microswitch (2+2 nas grades, em série cada par, + 1 porta cozinha) + 2 cabos de 2 vias até as grades
 
 ---
