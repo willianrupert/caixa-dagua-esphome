@@ -45,8 +45,8 @@ REDE 220V ──[disjuntor]──┤                                            
                              + microswitch da porta de madeira
 
                     CAIXA SUPERIOR: 2 boias reed + R 1k/4.7k/10k(EOL)
-                    2 fios ────────────────────────► GPIO4 (com pull-up 3.3k
-                                                       no quadro + cap 100nF)
+                    2 fios ────────────────────────► GPIO4 (com pull-up 4.7k
+                                                       ao 3V3 + cap 100nF)
 
                     GRADE PRINCIPAL: 2 microswitches em série na fechadura
                     cabo 2 vias ─────────────────────► GPIO6 (seção 9)
@@ -164,7 +164,7 @@ Os três ramos ficam em paralelo entre os **2 fios** que descem ao quadro (chame
 
 **No quadro**, os 2 fios chegam assim:
 - Fio A → nó do ADC (GPIO4), que também recebe:
-  - **Resistor pull-up de 3.3 kΩ** até 3.3 V
+  - **Resistor pull-up de 4.7 kΩ** até o pino `3V3` do ESP32
   - **Capacitor cerâmico 100 nF** até GND (filtro de ruído)
 - Fio B → GND (mesmo GND do ESP32)
 
@@ -184,9 +184,9 @@ Tensões esperadas no ADC (para conferir com multímetro antes de plugar no ESP3
 | Situação | Resistência do laço | Tensão no nó ADC |
 |---|---|---|
 | Cabo rompido / boia desconectada | ∞ | ~3.3 V |
-| Ambas abertas (caixa cheia) | 10 kΩ | ~2.48 V |
-| Só a máxima fechada (intermediário) | 4.7k ∥ 10k ≈ 3.2 kΩ | ~1.62 V |
-| Ambas fechadas (crítico) | 1k ∥ 4.7k ∥ 10k ≈ 762 Ω | ~0.62 V |
+| Ambas abertas (caixa cheia) | 10 kΩ | ~2.25 V |
+| Só a máxima fechada (intermediário) | 4.7k ∥ 10k ≈ 3.2 kΩ | ~1.34 V |
+| Ambas fechadas (crítico) | 1k ∥ 4.7k ∥ 10k ≈ 762 Ω | ~0.46 V |
 | Cabo em curto | ~0 | ~0 V |
 
 > Meça essas tensões com um multímetro **antes** de conectar o fio A ao GPIO4 — se bater com a tabela, a fiação das boias está correta. Teste rápido de orientação, fácil de fazer sozinho: com o nível **entre** as boias, o laço deve medir **~3,2 kΩ**. Se medir ~10 kΩ ou ~909 Ω, alguma boia está girada.
@@ -231,7 +231,7 @@ LADO DOS SENSORES                                 LADO DO CABO
   perna do EOL 10kΩ** + Fio de SINAL que desce ao quadro.
 - **Trilhas isoladas:** Fio Máx 2 solda direto na perna da frente do 4.7kΩ;
   Fio Mín 2 solda direto na perna da frente do 1.0kΩ.
-- **Fio COMUM vai pro GND do quadro, nunca pro 3.3V** — o pull-up de 3.3kΩ
+- **Fio COMUM vai pro GND do quadro, nunca pro 3.3V** — o pull-up de 4.7kΩ
   que fecha o divisor de tensão já mora no quadro, no nó do ADC (ver tabela
   acima). Se o comum fosse pro 3.3V também, não sobraria caminho pro GND e o
   ADC leria sempre perto de 3.3V, não importa a posição das boias.
@@ -334,7 +334,7 @@ Ver a lista completa com quantidades e observações no [Memorial Descritivo, se
 - ESP32-S3 + YYNMOS-4 (4 canais, só 3 em uso — LED RGB)
 - Módulo relé 5 V 1 canal, com optoacoplador (jumper JD-VCC) + Contator monofásico 25 A AC-3 (bobina 220 V)
 - PZEM-004T 10 A (shunt interno)
-- Capacitor cerâmico 100 nF + resistor pull-up 3.3 kΩ
+- Capacitor cerâmico 100 nF (código **104**) + resistor pull-up 4.7 kΩ
 - Supressor de surto (snubber RC ou varistor 275 V)
 - Botão inox antivandalismo com LED RGB anodo comum + cabo UTP Cat5e/6
 - 5× microswitch (2+2 nas grades, em série cada par, + 1 porta cozinha) + 2 cabos de 2 vias até as grades

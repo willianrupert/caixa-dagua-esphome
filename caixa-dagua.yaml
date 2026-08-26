@@ -57,7 +57,19 @@ substitutions:
 
   # ------------- CALIBRAÇÃO (ajustar na instalação) -------------
   # Matriz de boias SUPERVISIONADA (laço com resistor de fim de linha):
-  #   - Pull-up de 3.3kΩ do nó ADC para 3.3V (no quadro).
+  #   - Pull-up de 4.7kΩ do nó ADC para o 3V3 DO PRÓPRIO ESP32 (no quadro).
+  #     Tem que ser esse 3V3 e não outra fonte: é a mesma tensão que o ADC usa
+  #     como referência, e qualquer diferença entre as duas vira erro direto na
+  #     leitura de nível.
+  #     CUIDADO ao ler a lista de peças: existem DOIS resistores de 4.7kΩ neste
+  #     projeto, em lugares diferentes — este pull-up, no quadro, e o da boia
+  #     MÁXIMA, dentro da caixinha selada. Não são intercambiáveis.
+  #     O projeto nasceu com 3.3kΩ aqui (melhor folga, 0.62V); 4.7kΩ foi o que
+  #     havia em mãos e dá 0.46V de folga mínima, folgado o bastante. Trocar o
+  #     valor exige recalcular os 4 limiares abaixo.
+  #   - Capacitor cerâmico 100nF (código 104) do nó ao GND — filtro de RF do
+  #     cabo que desce da caixa. Cerâmico de propósito: eletrolítico tem ESR e
+  #     indutância altas e não filtra a faixa que interessa.
   #   - Resistor EOL de 10kΩ em paralelo com as boias (NO LADO DA CAIXA!) —
   #     é ele que torna o cabo rompido detectável.
   #
@@ -79,16 +91,23 @@ substitutions:
   #      NORMAIS, que se alternam a cada enchimento, indistinguíveis dentro da
   #      tolerância de +-5% dos resistores.
   #
-  # Tensões resultantes:
+  # Tensões resultantes (pull-up de 4.7kΩ):
   #   cabo ROMPIDO / sem boia (circuito aberto)  ~3.3V  -> FALHA SENSOR
-  #   ambas abertas (10kΩ)          = CHEIA        ~2.48V
-  #   só máx fechada (4.7k∥10k)     = INTERMEDIÁRIO ~1.62V
-  #   ambas fechadas (1k∥4.7k∥10k)  = CRÍTICO      ~0.62V
+  #   ambas abertas (10kΩ)          = CHEIA        ~2.25V
+  #   só máx fechada (4.7k∥10k)     = INTERMEDIÁRIO ~1.34V
+  #   ambas fechadas (1k∥4.7k∥10k)  = CRÍTICO      ~0.46V
   #   cabo em CURTO                               ~0.0V  -> FALHA SENSOR
-  adc_sem_sensor_acima_de: "2.90"     # Volts — acima disso: rompido/sem boia
-  adc_cheia_acima_de: "2.10"          # Volts
-  adc_intermediario_acima_de: "1.10"  # Volts
-  adc_curto_abaixo_de: "0.35"         # Volts — abaixo disso: cabo em curto
+  #
+  # Os limiares abaixo ficam no meio de cada par vizinho, com as faixas
+  # verificadas contra tolerância de +-5% nos resistores: a pior combinação
+  # ainda deixa ~0.19V de folga na fronteira mais apertada.
+  # O limiar de "sem sensor" é 2.70 e não 3.0 de propósito: o ADC do S3 satura
+  # perto de 3.1V com atenuação de 12dB, então cabo rompido NÃO chega aos 3.3V
+  # teóricos — um limiar alto demais deixaria de detectar rompimento.
+  adc_sem_sensor_acima_de: "2.70"     # Volts — acima disso: rompido/sem boia
+  adc_cheia_acima_de: "1.79"          # Volts
+  adc_intermediario_acima_de: "0.88"  # Volts
+  adc_curto_abaixo_de: "0.22"         # Volts — abaixo disso: cabo em curto
   sensor_falho_leituras: "15"         # leituras (1s) fora das faixas p/ declarar falha
 
   # Bomba Intech BSCA2 1/4 HP 220V — corrente máxima/mínima e o tempo máximo

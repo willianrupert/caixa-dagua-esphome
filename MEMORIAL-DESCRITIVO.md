@@ -136,18 +136,18 @@ movimento contínuo, não 24 saltos.
   - **Nível Máximo:** resistor de **4.7 kΩ**
 - **Resistor de fim de linha (EOL) de 10 kΩ** em paralelo com as boias, **instalado no lado da caixa** (técnica de central de alarme): é ele que torna o rompimento do cabo eletricamente detectável.
 - Os três componentes em **paralelo**, descendo ao quadro por apenas **2 fios**.
-- **Pull-up de 3.3 kΩ** do nó do ADC para 3.3 V (referência do divisor, no quadro).
+- **Pull-up de 4.7 kΩ** do nó do ADC até o pino **`3V3` do próprio ESP32** (no quadro). Tem que ser esse 3V3, e não outra fonte de 3,3 V: é a mesma tensão que o ADC usa como referência, e qualquer diferença entre as duas vira erro direto na leitura. ⚠️ São **dois** resistores de 4,7 kΩ no projeto, em lugares diferentes — este, no quadro, e o da boia máxima, dentro da caixinha selada.
 - **Fiação das boias:** contato **fecha quando a água está ABAIXO** da boia — as duas. Isso é requisito de fail-safe, não convenção arbitrária: ver 4.1.1.
 
 | Situação | Resistência do laço | Tensão no ADC | Classificação |
 |---|---|---|---|
 | Cabo **rompido** / boias desconectadas | ∞ | **~3.3 V** | ⚠️ FALHA SENSOR |
-| Ambas abertas | 10 kΩ | **~2.48 V** | Caixa **cheia** |
-| Só máxima fechada | 4.7k ∥ 10k = 3.2 kΩ | **~1.62 V** | **Intermediário** |
-| Ambas fechadas | 1k ∥ 4.7k ∥ 10k = 762 Ω | **~0.62 V** | **Crítico** |
+| Ambas abertas | 10 kΩ | **~2.25 V** | Caixa **cheia** |
+| Só máxima fechada | 4.7k ∥ 10k = 3.2 kΩ | **~1.34 V** | **Intermediário** |
+| Ambas fechadas | 1k ∥ 4.7k ∥ 10k = 762 Ω | **~0.46 V** | **Crítico** |
 | Cabo em **curto** | ~0 | **~0 V** | ⚠️ FALHA SENSOR |
 
-- Limiares calibráveis: falha >2.90 V; cheia >2.10 V; intermediário >1.10 V; curto <0.35 V.
+- Limiares calibráveis: falha >2.70 V; cheia >1.79 V; intermediário >0.88 V; curto <0.22 V. O limiar de falha é 2.70 e não 3.0 porque **o ADC do S3 satura perto de 3,1 V** com atenuação de 12 dB — cabo rompido não chega aos 3,3 V teóricos, e um limiar alto demais deixaria de detectar rompimento.
 
 #### 4.1.1 Por que as duas boias fecham secas — e por que não se gira
 
@@ -336,7 +336,7 @@ no [Manual de Fiação, seção 9](MANUAL-FIACAO.md#9-expansão--sensores-de-por
 |---|---|---|
 | 1 | PZEM-004T (versão 10A, shunt interno) | Fase da bomba passa pelos parafusos; serial → ESP32 |
 | 1 | Capacitor cerâmico 100 nF | Entre pino ADC e GND (filtro de ruído das boias) |
-| 1 | Resistor 3.3 kΩ (pull-up do ADC) | Do nó do ADC para 3.3 V — referência do divisor da matriz de boias |
+| 1 | Resistor 4.7 kΩ (pull-up do ADC) | Do nó do ADC ao pino `3V3` do ESP32 — braço de cima do divisor. **Não confundir** com o 4.7 kΩ da boia máxima, que fica na caixa |
 | 1 | Supressor de surto (Snubber RC ou Varistor 275 V) | Nos bornes A1/A2 da bobina do contator (arco de desligamento) |
 
 ### 5.4 Cozinha (Interface Humana)
