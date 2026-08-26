@@ -82,7 +82,7 @@ stateDiagram-v2
 | 🟡 Amarelo piscando | **Pausa automática** — inching ou falha de sensor |
 | 🔴 Vermelho piscando | Falha: rotor preso (sobrecorrente) |
 | 🔵 Azul piscando | Falha: bomba a seco (subcorrente) |
-| ⚪ Branco piscando | **Contator soldado — desligue o disjuntor!** |
+| ⚪ Branco piscando | **Contator soldado — desligue o disjuntor!** (ou chave de bypass em MANUAL) |
 
 ## 🛡️ As 9 Regras de Segurança
 

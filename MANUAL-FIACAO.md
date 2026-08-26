@@ -418,16 +418,11 @@ de 10 kΩ (3,3 V) + capacitor cerâmico 100 nF (GND) no lado do quadro — o
 pull-up interno do ESP32-S3 (~45 kΩ) é fraco e mais sensível a ruído em
 cabos longos. Não é obrigatório para um cabo curto dentro de casa.
 
-> ⚠️ **GPIO8 (Grade Secundária) é pino de strapping** (controla se a ROM
-> imprime o log de boot — não decide o modo SPI/Download, que é o GPIO9,
-> esse sim evitado de propósito). Efeito esperado é só cosmético, mas
-> **ainda não foi testado** com o par em série fechado no instante do boot.
-> Antes de fixar a fiação definitiva: feche manualmente os dois microswitches
-> da grade secundária, dê power-cycle no ESP32 e confirme no log/Home
-> Assistant que ele sobe normalmente (FSM entra em E0 ou E1, não trava em
-> bootloop). Se algo der errado, troque `pino_grade_secundaria` para outro
-> GPIO livre do seu módulo específico — a troca é só no `substitutions:` do
-> YAML.
+> ✅ **A ressalva de strapping saiu com a migração para o S3** (2026-08-25).
+> No ESP32-C3 a grade secundária morava no GPIO8, que era pino de strapping,
+> e o manual exigia testar o boot com o contato fechado antes de fixar a
+> fiação. No S3 os três pinos de porta (GPIO6, GPIO7, GPIO8) são limpos —
+> esse teste deixou de ser necessário.
 
 ### 9.3 Porta da cozinha — reaproveita o UTP existente
 
@@ -458,8 +453,73 @@ seção 5.
 4. [ ] Cada microswitch da grade fecha só quando a lingueta correspondente
    avança até a posição travada (não antes).
 5. [ ] Cozinha: continuidade das vias 7/8 do UTP confirmada ponta a ponta.
-6. [ ] GPIO8 testado com o par da grade secundária fechado no boot (ver
-   9.2) antes de fixar a fiação definitiva.
-7. [ ] Após gravar o firmware: `Grade Principal (Serviço)`, `Grade
+6. [ ] Após gravar o firmware: `Grade Principal (Serviço)`, `Grade
    Secundária (Serviço)` e `Trava Madeira Cozinha` aparecem no Home
    Assistant e mudam de estado ao atuar cada switch à mão.
+
+---
+
+## 10. Chave de bypass — ligar a bomba com o ESP32 morto
+
+Uma chave de 3 pinos (SPDT) comuta quem alimenta a bobina do contator: o
+relé (operação normal) ou a fase direta (forçado). **Existe para um caso
+só: o ESP32 quebrou e a casa precisa de água.**
+
+O que faz essa garantia valer é o caminho em MANUAL não tocar em nada
+eletrônico — `disjuntor → chave → A1`. Não passa pelo relé, nem pelo ESP32,
+nem pela fonte Hi-Link. Com os três queimados ou fora do quadro, a bomba
+ainda liga. Só o disjuntor e a contatora precisam funcionar.
+
+### 10.1 Ligação
+
+```
+DISJUNTOR fase ──┬────────────────────► RELÉ  COM
+                 │                       RELÉ  NO ──────► CHAVE pino 1  (AUTO)
+                 │
+                 └────────────────────► CHAVE pino 2  (MANUAL)
+
+                                        CHAVE comum ────► A1  ┐
+DISJUNTOR neutro ─────────────────────────────────────► A2  ┘  bobina
+                                                     └─ snubber em A1/A2
+```
+
+É **comutação, não ponte em paralelo**: em cada posição o outro caminho
+fica fisicamente desconectado. Em MANUAL o relé sai inteiramente do
+circuito, sem chance de retorno por caminho inesperado.
+
+> ⚠️ **A fase da bobina sai de ANTES do PZEM** (direto do disjuntor), como
+> no desenho. Puxando do `Load L`, a corrente da bobina passaria pelo shunt
+> e **somaria na medição** — o PZEM deixaria de medir só a bomba, e a
+> calibração de corrente máxima/mínima ficaria com um offset permanente de
+> algumas dezenas de mA. O neutro pode vir de qualquer ponto; o shunt só
+> está na fase.
+
+Chave **rated 250 V** (chaveia a bobina em 220 V). Identifique os pinos com
+o multímetro, com a chave fora do circuito: o **comum** é o que tem
+continuidade com um dos outros dois em qualquer posição da alavanca —
+normalmente o do meio, mas confirme em vez de presumir. Depois **etiquete
+no painel**: `AUTO` / `MANUAL — FORÇADO`.
+
+### 10.2 O que se perde em MANUAL
+
+**Nenhuma proteção do firmware atua.** Sem limite de 10 minutos (inching),
+sem boia máxima, sem corte por bomba a seco, sem sobrecorrente. A bomba
+roda até alguém virar a chave de volta — confira que a cisterna tem água
+antes, e não deixe ligado sem vigilância.
+
+### 10.3 Como testar — com o ESP32 desligado
+
+**Teste o bypass com a placa sem energia.** É o cenário para o qual ele
+existe, então é o único teste fiel — e de quebra não gera alarme nenhum,
+porque não há firmware rodando.
+
+Testar com o sistema vivo dispara **E5 (branco piscando)** em poucos
+segundos: o firmware vê corrente no motor com o relé comandado desligado,
+que é exatamente a assinatura de contator soldado. Ele não tem como
+distinguir uma coisa da outra só pela corrente, e o alarme continua
+disparando de propósito — suprimi-lo seria abrir mão da única detecção de
+contator soldado que existe. O que mudou é o texto da ocorrência, que agora
+nomeia as duas causas possíveis em vez de acusar defeito.
+
+E o clique curto **não resolve** enquanto o bypass estiver ligado: ele
+limpa o alarme, mas a corrente continua lá e o E5 volta em segundos.

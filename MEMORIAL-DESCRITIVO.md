@@ -53,7 +53,7 @@ Se o sistema salvasse "bomba ligada" e religasse o relé direto no boot, haveria
 | E2 | Recalque (Crítico) | Enchendo com nível crítico. LED Roxo/Pink. |
 | E3 | Recalque (Intermediário/Manual) | Enchendo em nível intermediário ou por comando manual. LED Azul. |
 | E4 | Finalização (Sucesso) | Caixa encheu. LED Verde por 1 minuto. |
-| E5 | Falha Contator (Corrente Fantasma) | Corrente detectada com relé desligado = contatos soldados. LED Branco piscando. Requer clique curto (e desligar o disjuntor!). |
+| E5 | Falha Contator (Corrente Fantasma) | Corrente detectada com relé desligado = contatos soldados **ou chave de bypass em MANUAL** (ver 4.2.1). LED Branco piscando. Requer clique curto (e desligar o disjuntor, se não for o bypass). |
 | E6 | Falha Corrente Alta | Rotor preso. LED Vermelho piscando. Requer clique curto para reset. |
 | E7 | Falha Corrente Baixa | Bomba sem água (cisterna seca). LED Azul piscando. Requer clique curto para reset. |
 | E8 | **Modo Pausa** | Manutenção soberana. LED Amarelo **sólido** (manual) ou **piscando** (automática: inching/sensor). |
@@ -101,7 +101,7 @@ Se o sistema salvasse "bomba ligada" e religasse o relé direto no boot, haveria
 | 7 | Pausa **automática** (inching / falha de sensor) | **Amarelo piscando lento** (700 ms) |
 | 8 | Falha corrente alta (rotor preso) | **Vermelho piscando** |
 | 9 | Falha corrente baixa (sem água) | **Azul piscando** |
-| 10 | Falha de contator (corrente fantasma) | **Branco piscando rápido** (300 ms) — desligue o disjuntor! |
+| 10 | Falha de contator (corrente fantasma) | **Branco piscando rápido** (300 ms) — desligue o disjuntor, salvo se a chave estiver em MANUAL |
 
 ### 3.1 Varredura de matiz no boot
 
@@ -221,6 +221,36 @@ próxima geração de sensores de nível.
 - **Corrente baixa** → bomba a seco / cisterna vazia → **E7**.
 - **Corrente fantasma** (relé desligado + corrente > 0.5 A por mais de 10 s) → contatos do relé/contator **soldados** → **E5** (branco piscando). O software não consegue cortar um defeito mecânico — o alarme existe para o usuário **desligar o disjuntor**. Vale em **qualquer** estado, inclusive durante a Pausa (é exatamente quando alguém pode estar com a mão na caixa!).
 
+#### 4.2.1 A chave de bypass produz a mesma assinatura — e alarma junto
+
+Existe uma chave SPDT que comuta quem alimenta a bobina do contator: o relé
+(AUTO) ou a fase direta (MANUAL). Ela existe para **um caso só — o ESP32
+quebrou e a casa precisa de água** — e o que faz essa garantia valer é o
+caminho em MANUAL não tocar em nada eletrônico: `disjuntor → chave → A1`,
+sem passar pelo relé, pelo ESP32 ou pela fonte. Com os três queimados, a
+bomba ainda liga. Fiação em [Manual de Fiação, seção 10](MANUAL-FIACAO.md#10-chave-de-bypass--ligar-a-bomba-com-o-esp32-morto).
+
+Consequência: em MANUAL o motor gira sem o relé ter mandado, que é
+**exatamente** a assinatura de contator soldado. Não há como distinguir
+pela corrente — as duas situações são eletricamente idênticas para o PZEM.
+
+**O alarme continua disparando, de propósito.** Suprimi-lo exigiria um
+sinal dizendo ao firmware que o bypass está ativo, e a chave de 3 pinos não
+tem contato sobrando para isso. A alternativa — um interruptor no Home
+Assistant que o operador liga junto — foi descartada: um esquecimento
+deixaria a única detecção de contator soldado desligada por tempo
+indeterminado, trocando um incômodo por um risco real.
+
+O que mudou foi só o **texto**, que antes mentia por omissão: a ocorrência
+agora diz *"contator soldado OU chave em MANUAL"* em vez de acusar defeito
+quando pode ser o operador.
+
+**O teste do bypass se faz com o ESP32 desligado.** É o cenário para o qual
+ele existe, portanto o único teste fiel — e de quebra não gera alarme
+nenhum, porque não há firmware rodando. Testar com o sistema vivo dispara
+E5 em segundos, e o clique curto não adianta enquanto a corrente persistir:
+ele limpa, e o alarme volta.
+
 ### 4.3 Sensores de porta (microswitches) — fail-safe por polaridade e por série, não por laço EOL
 
 Expansão sem relação com a FSM da bomba: as 3 portas da área de serviço
@@ -337,7 +367,7 @@ no [Manual de Fiação, seção 9](MANUAL-FIACAO.md#9-expansão--sensores-de-por
 5. **Modo Pausa ignora boias** — nenhuma variação de nível liga a bomba durante manutenção.
 6. **Inching de 10 minutos** — a bomba nunca fica ligada mais de 10 min contínuos; se estourar (boia superior quebrada?), entra em Pausa Automática (amarelo piscando) e exige clique longo para destravar.
 7. **Nunca reiniciar por falta de rede** — `reboot_timeout: 0s` no Wi-Fi e na API. Sem isso, o padrão do ESPHome reiniciaria o chip a cada 15 min sem Wi-Fi/HA, violando a autonomia local.
-8. **Corrente fantasma alarma sempre** — corrente com relé desligado = contator soldado (E5, branco piscando), detectado em qualquer estado, inclusive na Pausa.
+8. **Corrente fantasma alarma sempre** — corrente com relé desligado = contator soldado (E5, branco piscando), detectado em qualquer estado, inclusive na Pausa. A chave de bypass em MANUAL produz a mesma assinatura e também alarma: é deliberado, ver 4.2.1.
 9. **Sensor de nível supervisionado** — cabo rompido, em curto ou desconectado é detectado pelo laço EOL e leva à Pausa Automática; o sistema nunca opera "no escuro".
 
 ---

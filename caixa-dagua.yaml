@@ -43,6 +43,12 @@ substitutions:
   pino_led_b: GPIO18      # canal 3 do YYNMOS-4 (pwm3)
   pino_rele: GPIO21       # -> módulo relé 5V (IN, ativo em HIGH) -> contator
 
+  # NeoPixel embutido na própria placa S3 — espelha o LED do botão, para que
+  # o estado seja legível no quadro sem ir até a cozinha. GPIO48 é o pino na
+  # maioria das placas S3; algumas usam GPIO38. Se o LED não acender, é o
+  # primeiro lugar a trocar.
+  pino_led_placa: GPIO48
+
   # Expansão — sensores de porta (microswitches, contato seco).
   # No S3 os três são pinos limpos, sem ressalva de strapping.
   pino_grade_principal: GPIO6    # 2 microswitches em série — grade principal do serviço
@@ -109,6 +115,12 @@ esphome:
     # NUNCA religa a bomba direto: sempre reavalia boias + E1 + blanking.
     priority: -100
     then:
+      # Liga o espelho da placa e deixa rodando para sempre — daqui em diante
+      # ninguém mais comanda o led_placa, ele só observa o led_cozinha.
+      - light.turn_on:
+          id: led_placa
+          brightness: 100%
+          effect: "Espelho do Botao"
       - script.execute: boot_seguro
 
 esp32:
@@ -123,6 +135,13 @@ preferences:
   flash_write_interval: 0s
 
 logger:
+  # No ESP32-S3 o ESPHome manda o log para a USB nativa (USB_SERIAL_JTAG) por
+  # padrão. A gravação, porém, acontece pela UART0 (GPIO43/44) através do
+  # adaptador FTDI — e a USB nativa desta placa não aceita o auto-reset do
+  # esptool, então é pelo FTDI que se grava. Com o padrão, gravar e ler log
+  # exigiriam dois cabos em portas diferentes, e a serial ficava muda no cabo
+  # que estava na mão. UART0 põe as duas coisas no mesmo lugar.
+  hardware_uart: UART0
 
 api:
   encryption:
@@ -257,7 +276,7 @@ script:
           if (novo != 8) id(pausa_automatica) = false;
 
           // --- Última Ocorrência: registro do "porquê" para debugging ---
-          if (novo == 5)      id(ocorrencia_texto).publish_state("Contator soldado: corrente com rele DESLIGADO!");
+          if (novo == 5)      id(ocorrencia_texto).publish_state("Corrente com rele DESLIGADO: contator soldado OU chave em MANUAL");
           else if (novo == 6) id(ocorrencia_texto).publish_state("Rotor preso (sobrecorrente)");
           else if (novo == 7) id(ocorrencia_texto).publish_state("Bomba a seco (subcorrente)");
           else if (novo == 8 && id(pausa_automatica)) {
@@ -797,10 +816,20 @@ sensor:
               // os contatos do relé/contator soldaram fechados. O software
               // não consegue cortar (defeito mecânico) — alarma para o
               // usuário desligar o disjuntor. Vale em QUALQUER estado.
+              //
+              // A chave de bypass em MANUAL produz EXATAMENTE esta assinatura,
+              // e não há como distinguir pela corrente: nos dois casos o motor
+              // gira sem o relé ter mandado. O alarme continua disparando de
+              // propósito — suprimir seria abrir mão da única detecção de
+              // contator soldado que existe — mas o texto agora nomeia as duas
+              // causas, em vez de acusar defeito quando pode ser o operador.
+              // O bypass existe para quando o ESP32 morreu, e aí não há
+              // ninguém para alarmar; testá-lo com a placa desligada é o teste
+              // fiel ao cenário real E evita o alarme. Ver MANUAL-FIACAO.md 10.
               if (!id(rele_bomba).state && s != 5 &&
                   x > ${corrente_fantasma} &&
                   (millis() - id(pump_stopped_at)) > ${fantasma_grace_ms}) {
-                ESP_LOGE("fsm", "CORRENTE FANTASMA %.2f A com rele desligado - CONTATOR SOLDADO! Desligue o disjuntor!", x);
+                ESP_LOGE("fsm", "CORRENTE FANTASMA %.2f A com rele desligado - contator soldado OU chave em MANUAL. Se nao for o bypass, desligue o disjuntor!", x);
                 id(goto_state).execute(5);
                 return;
               }
@@ -879,6 +908,40 @@ output:
     pin: ${pino_led_b}
 
 light:
+  # ---- NeoPixel embutido na placa: espelho do LED do botão ----
+  # Mostra o mesmo estado no quadro, sem precisar ir até a cozinha — útil
+  # tanto na bancada quanto para conferir a instalação com a porta do quadro
+  # aberta.
+  #
+  # O espelhamento é por AMOSTRAGEM, não por duplicação de comandos. Um
+  # efeito lê `current_values` do led_cozinha a cada 50ms — e `current_values`
+  # é o valor JÁ INTERPOLADO da transição em curso, não o alvo. Consequência:
+  # o NeoPixel reproduz sozinho os fades, a respiração dos alarmes, os pulsos
+  # de clique e a varredura de boot, sem que nenhum desses lugares saiba que
+  # ele existe. Duplicar os comandos nos seis pontos que tocam o LED daria o
+  # mesmo resultado hoje e divergiria no primeiro que alguém esquecesse.
+  #
+  # `internal: true`: é réplica de uma entidade que o HA já tem. Expor as duas
+  # só suja a lista.
+  - platform: esp32_rmt_led_strip
+    id: led_placa
+    internal: true
+    pin: ${pino_led_placa}
+    num_leds: 1
+    chipset: WS2812
+    rgb_order: GRB
+    default_transition_length: 0s
+    effects:
+      - addressable_lambda:
+          name: "Espelho do Botao"
+          update_interval: 50ms
+          lambda: |-
+            // as_rgb() já entrega estado x brilho x cor combinados, que é
+            // exatamente o que sai nos PWM do botão naquele instante.
+            float r, g, b;
+            id(led_cozinha).current_values.as_rgb(&r, &g, &b);
+            it[0] = Color((uint8_t)(r * 255.0f), (uint8_t)(g * 255.0f), (uint8_t)(b * 255.0f));
+
   - platform: rgb
     id: led_cozinha
     name: "LED Botão Cozinha"
