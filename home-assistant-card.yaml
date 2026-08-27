@@ -141,17 +141,19 @@ elements:
       target:
         entity_id: button.caixa_d_agua_clique_longo_modo_pausa
     style:
-      top: 68%
+      top: 74%
       left: 50%
-      "--mdc-icon-size": 30px
-      width: 64px
-      height: 64px
+      "--mdc-icon-size": 22px
+      width: 42px
+      height: 42px
       border-radius: 50%
-      background: var(--card-background-color)
+      background: "rgba(var(--rgb-primary-text-color, 128, 128, 128), 0.05)"
       display: flex
       align-items: center
       justify-content: center
-      box-shadow: 0 2px 8px rgba(0,0,0,0.4)
+      "--paper-item-icon-color": "var(--secondary-text-color)"
+      "--state-icon-color": "var(--secondary-text-color)"
+      color: "var(--secondary-text-color)"
 
 grid_options:
   columns: 6
