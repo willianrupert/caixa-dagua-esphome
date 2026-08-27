@@ -193,8 +193,6 @@ cards:
     entities:
       - entity: sensor.caixa_d_agua_tempo_do_ultimo_enchimento
         name: "Tempo do último enchimento"
-      - entity: sensor.caixa_d_agua_duracao_do_ultimo_enchimento_min
-        name: "Duração em minutos"
       - entity: sensor.caixa_d_agua_energia_do_ultimo_enchimento
         name: "Energia consumida no ciclo"
       - entity: sensor.caixa_d_agua_energia_consumida
