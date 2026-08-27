@@ -189,7 +189,7 @@ cards:
       - entity: number.caixa_d_agua_corrente_minima_bomba_a_seco
         name: "Corrente mínima (bomba a seco)"
   - type: entities
-    title: Métricas do Último Enchimento
+    title: Métricas
     entities:
       - entity: sensor.caixa_d_agua_tempo_do_ultimo_enchimento
         name: "Tempo do último enchimento"
