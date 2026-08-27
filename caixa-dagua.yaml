@@ -308,6 +308,11 @@ globals:
     type: float
     restore_value: true
     initial_value: '0.0'
+  # Horímetro: tempo total acumulado de funcionamento da bomba (em segundos)
+  - id: tempo_total_bomba_s
+    type: uint32_t
+    restore_value: true
+    initial_value: '0'
 
 # =====================================================================
 #  NÚCLEO DA FSM
@@ -384,6 +389,17 @@ script:
             id(rele_bomba).turn_on();
             id(limite_bomba_timer).execute();
           } else if (!bomba && id(rele_bomba).state) {
+            // Horímetro: acumula tempo de funcionamento da bomba
+            uint32_t dt_run = (millis() - id(pump_started_at)) / 1000;
+            id(tempo_total_bomba_s) += dt_run;
+            uint32_t tot_s = id(tempo_total_bomba_s);
+            uint32_t tot_h = tot_s / 3600;
+            uint32_t tot_m = (tot_s % 3600) / 60;
+            char buf_h[32];
+            snprintf(buf_h, sizeof(buf_h), "%u h %02u min", tot_h, tot_m);
+            id(texto_tempo_total_bomba).publish_state(buf_h);
+            id(sensor_tempo_total_bomba_horas).publish_state(tot_s / 3600.0f);
+
             // Se estava bombeando e finalizou com sucesso (E4), registra telemetria do ciclo
             if (novo == 4 && id(ciclo_inicio_ms) > 0) {
               uint32_t dt_s = (millis() - id(ciclo_inicio_ms)) / 1000;
@@ -623,6 +639,14 @@ script:
                 // desligar a bomba (ver goto_state) — o relé aqui é comandado
                 // direto, fora do goto_state, então ninguém mais atualiza isto.
                 id(pump_stopped_at) = millis();
+                id(tempo_total_bomba_s) += 10;
+                uint32_t tot_s = id(tempo_total_bomba_s);
+                uint32_t tot_h = tot_s / 3600;
+                uint32_t tot_m = (tot_s % 3600) / 60;
+                char buf_h[32];
+                snprintf(buf_h, sizeof(buf_h), "%u h %02u min", tot_h, tot_m);
+                id(texto_tempo_total_bomba).publish_state(buf_h);
+                id(sensor_tempo_total_bomba_horas).publish_state(tot_s / 3600.0f);
             - delay: 500ms
             - lambda: |-
                 id(teste_ativo) = false;
@@ -708,6 +732,13 @@ script:
           if (id(energia_ultimo_ciclo_wh) > 0.0f) {
             id(sensor_energia_ultimo_ciclo).publish_state(id(energia_ultimo_ciclo_wh));
           }
+          uint32_t tot_s = id(tempo_total_bomba_s);
+          uint32_t tot_h = tot_s / 3600;
+          uint32_t tot_m = (tot_s % 3600) / 60;
+          char buf_h[32];
+          snprintf(buf_h, sizeof(buf_h), "%u h %02u min", tot_h, tot_m);
+          id(texto_tempo_total_bomba).publish_state(buf_h);
+          id(sensor_tempo_total_bomba_horas).publish_state(tot_s / 3600.0f);
 
           int salvo = id(fsm_state);
           ESP_LOGI("fsm", "E9 Boot Seguro. Estado gravado na flash: %d", salvo);
@@ -1066,6 +1097,16 @@ sensor:
     device_class: energy
     state_class: measurement
 
+  # Horímetro numérico para gráficos de uso a longo prazo
+  - platform: template
+    id: sensor_tempo_total_bomba_horas
+    name: "Horas de Uso Totais da Bomba (h)"
+    icon: mdi:history
+    unit_of_measurement: "h"
+    accuracy_decimals: 2
+    device_class: duration
+    state_class: total_increasing
+
 # =====================================================================
 #  SAÍDAS
 # =====================================================================
@@ -1265,6 +1306,12 @@ text_sensor:
     id: texto_duracao_ultimo_ciclo
     name: "Tempo do Último Enchimento"
     icon: mdi:clock-check-outline
+
+  # Horímetro em formato texto amigável (ex: "0 h 13 min")
+  - platform: template
+    id: texto_tempo_total_bomba
+    name: "Horas de Uso da Bomba"
+    icon: mdi:history
 
 button:
   # Espelham exatamente o botão físico — mesma lógica, sem atalhos inseguros
