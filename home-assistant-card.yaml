@@ -86,10 +86,10 @@ elements:
   - type: state-label
     entity: sensor.caixa_d_agua_dispositivo
     style:
-      top: 66%
+      top: 62%
       left: 50%
       transform: translate(-50%, -50%)
-      font-weight: "500"
+      font-weight: "600"
       font-size: 14px
       line-height: 20px
       pointer-events: none
@@ -103,7 +103,7 @@ elements:
   - type: state-label
     entity: sensor.caixa_d_agua_status
     style:
-      top: 84%
+      top: 78%
       left: 50%
       transform: translate(-50%, -50%)
       font-size: 12px
@@ -131,7 +131,7 @@ elements:
       target:
         entity_id: button.caixa_d_agua_clique_longo_modo_pausa
     style:
-      top: 30%
+      top: 28%
       left: 50%
       "--mdc-icon-size": 20px
       width: 42px
