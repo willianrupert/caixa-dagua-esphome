@@ -183,6 +183,23 @@ ambiguidade entre "aviso" e "falha" na mesma cor.
 | Ambas fechadas | 1k ∥ 4.7k ∥ 10k = 762 Ω | **~0.46 V** | **Crítico** |
 | Cabo em **curto** | ~0 | **~0 V** | ⚠️ FALHA SENSOR |
 
+> ⚠️ **Os limiares em uso NÃO são estes valores teóricos** (2026-08-26).
+> O ADC desta placa soma um offset fixo de ~0,35 V — confirmado medindo o
+> pino com multímetro (nó em 0,71 V, ADC reportando 1,05 V) — e o laço
+> apresenta ~500 Ω a mais que o medido isolado, provavelmente resistência de
+> contato em borne. Em vez de corrigir as duas coisas por modelo, os limiares
+> foram postos no meio dos valores **observados em campo**, com as boias
+> manipuladas à mão: crítico 1,05 V · intermediário 2,40 V · cheia 3,17 V.
+> Se o hardware for mexido, **remeça em vez de recalcular**.
+>
+> **Detecção de cabo rompido está desligada.** "Cheia" reporta 3,17 V, que é
+> o teto deste ADC, e cabo rompido reporta o mesmo — indistinguíveis. O
+> limiar ficou em 3,30 V, acima do que o conversor produz, para não dar falso
+> alarme com a caixa cheia. A falha cai para o lado seguro: cabo rompido é
+> lido como "cheia", a bomba não liga, a caixa para de encher. Ninguém se
+> molha e o motor não roda seco. Resolver de verdade exige atacar o offset do
+> ADC (calibração de dois pontos) ou baixar a escala do divisor.
+
 - Limiares calibráveis: falha >2.70 V; cheia >1.79 V; intermediário >0.88 V; curto <0.22 V. O limiar de falha é 2.70 e não 3.0 porque **o ADC do S3 satura perto de 3,1 V** com atenuação de 12 dB — cabo rompido não chega aos 3,3 V teóricos, e um limiar alto demais deixaria de detectar rompimento.
 
 #### 4.1.1 Por que as duas boias fecham secas — e por que não se gira
