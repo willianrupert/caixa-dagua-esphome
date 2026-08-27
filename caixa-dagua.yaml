@@ -308,6 +308,10 @@ globals:
     type: float
     restore_value: true
     initial_value: '0.0'
+  - id: potencia_media_ultimo_ciclo_w
+    type: float
+    restore_value: true
+    initial_value: '0.0'
   # Horímetro: tempo total acumulado de funcionamento da bomba (em segundos)
   - id: tempo_total_bomba_s
     type: uint32_t
@@ -417,11 +421,16 @@ script:
                 if (d_wh >= 0.0f) {
                   id(energia_ultimo_ciclo_wh) = d_wh;
                   id(sensor_energia_ultimo_ciclo).publish_state(d_wh);
+                  if (dt_s > 0) {
+                    float pot_med = (d_wh * 3600.0f) / (float)dt_s;
+                    id(potencia_media_ultimo_ciclo_w) = pot_med;
+                    id(sensor_potencia_media_ultimo_ciclo).publish_state(pot_med);
+                  }
                 }
               }
             }
             id(rele_bomba).turn_off();  // pausa/falha desligam IMEDIATAMENTE
-            id(pump_stopped_at) = millis();  // tolerância da corrente fantasma
+            id(pump_stopped_at) = millis();  // tolerância da corrente/potência fantasma
             id(limite_bomba_timer).stop();
           }
 
@@ -610,10 +619,10 @@ script:
             id(goto_state).execute(8);
           }
 
-  # ---- Teste manual da bomba: mede corrente de regime ----
+  # ---- Teste manual da bomba: mede potência de regime ----
   # Só roda a partir do Standby (E0), fora da FSM normal, por uma janela fixa
-  # e travada de 10s — serve para calibrar numero_corrente_maxima/minima com
-  # segurança, sem depender só da pinça amperimétrica na instalação.
+  # e travada de 10s — serve para calibrar numero_potencia_maxima/minima com
+  # segurança, sem depender só do alicate amperímetro ou wattímetro na instalação.
   - id: testar_bomba
     then:
       - if:
@@ -657,7 +666,7 @@ script:
                 char buf[96];
                 if (!std::isnan(id(teste_regime))) {
                   id(teste_regime_sensor).publish_state(id(teste_regime));
-                  snprintf(buf, sizeof(buf), "Teste manual: regime %.2f A", id(teste_regime));
+                  snprintf(buf, sizeof(buf), "Teste manual: regime %.0f W", id(teste_regime));
                 } else {
                   snprintf(buf, sizeof(buf), "Teste manual: regime nao capturado");
                 }
@@ -731,6 +740,9 @@ script:
           }
           if (id(energia_ultimo_ciclo_wh) > 0.0f) {
             id(sensor_energia_ultimo_ciclo).publish_state(id(energia_ultimo_ciclo_wh));
+          }
+          if (id(potencia_media_ultimo_ciclo_w) > 0.0f) {
+            id(sensor_potencia_media_ultimo_ciclo).publish_state(id(potencia_media_ultimo_ciclo_w));
           }
           uint32_t tot_s = id(tempo_total_bomba_s);
           uint32_t tot_h = tot_s / 3600;
@@ -994,10 +1006,17 @@ sensor:
   - platform: pzemac
     id: pzem_bomba
     update_interval: 3s
+    voltage:
+      name: "Tensão da Rede"
+      accuracy_decimals: 1
     current:
       name: "Corrente da Bomba"
       id: corrente_bomba
       accuracy_decimals: 2
+    power:
+      name: "Potência da Bomba"
+      id: potencia_bomba
+      accuracy_decimals: 1
       on_value:
         then:
           # ----- Amostragem do teste manual da bomba (não interfere na FSM) -----
@@ -1005,12 +1024,12 @@ sensor:
               if (!id(teste_ativo) || std::isnan(x)) return;
               uint32_t dt = millis() - id(teste_inicio);
               if (dt >= 4000 && std::isnan(id(teste_regime))) {
-                id(teste_regime) = x;  // corrente já assentada (regime)
+                id(teste_regime) = x;  // potência já assentada (regime em W)
               }
-              // Segurança absoluta do teste: corrente muito acima do limite
+              // Segurança absoluta do teste: potência muito acima do limite
               // configurado corta a bomba na hora, sem esperar os 10s do teste.
-              if (x > id(numero_corrente_maxima).state * 2.0f) {
-                ESP_LOGE("teste", "Teste abortado: corrente %.2f A muito acima do limite!", x);
+              if (x > id(numero_potencia_maxima).state * 2.0f) {
+                ESP_LOGE("teste", "Teste abortado: potencia %.1f W muito acima do limite!", x);
                 id(rele_bomba).turn_off();
                 id(teste_ativo) = false;
                 auto c = id(led_cozinha).turn_off();
@@ -1021,25 +1040,15 @@ sensor:
               if (std::isnan(x)) return;
               int s = id(fsm_state);
 
-              // ----- CORRENTE FANTASMA: contator soldado (E5) -----
-              // Relé comandado DESLIGADO mas o motor consome corrente:
+              // ----- POTÊNCIA FANTASMA: contator soldado (E5) -----
+              // Relé comandado DESLIGADO mas o motor consome potência (>30W):
               // os contatos do relé/contator soldaram fechados. O software
               // não consegue cortar (defeito mecânico) — alarma para o
               // usuário desligar o disjuntor. Vale em QUALQUER estado.
-              //
-              // A chave de bypass em MANUAL produz EXATAMENTE esta assinatura,
-              // e não há como distinguir pela corrente: nos dois casos o motor
-              // gira sem o relé ter mandado. O alarme continua disparando de
-              // propósito — suprimir seria abrir mão da única detecção de
-              // contator soldado que existe — mas o texto agora nomeia as duas
-              // causas, em vez de acusar defeito quando pode ser o operador.
-              // O bypass existe para quando o ESP32 morreu, e aí não há
-              // ninguém para alarmar; testá-lo com a placa desligada é o teste
-              // fiel ao cenário real E evita o alarme. Ver MANUAL-FIACAO.md 10.
               if (!id(rele_bomba).state && s != 5 &&
-                  x > ${corrente_fantasma} &&
+                  x > 30.0f &&
                   (millis() - id(pump_stopped_at)) > ${fantasma_grace_ms}) {
-                ESP_LOGE("fsm", "CORRENTE FANTASMA %.2f A com rele desligado - contator soldado OU chave em MANUAL. Se nao for o bypass, desligue o disjuntor!", x);
+                ESP_LOGE("fsm", "POTENCIA FANTASMA %.1f W com rele desligado - contator soldado OU chave em MANUAL. Se nao for o bypass, desligue o disjuntor!", x);
                 id(goto_state).execute(5);
                 return;
               }
@@ -1048,19 +1057,13 @@ sensor:
               if (!id(rele_bomba).state) return;
               // Blanking time: cegueira de 5s na partida (pico de arranque)
               if (millis() - id(pump_started_at) < ${blanking_ms}) return;
-              if (x > id(numero_corrente_maxima).state) {
-                ESP_LOGW("fsm", "SOBRECORRENTE %.2f A (limite %.2f A) - rotor preso!", x, id(numero_corrente_maxima).state);
+              if (x > id(numero_potencia_maxima).state) {
+                ESP_LOGW("fsm", "SOBREPOTENCIA %.1f W (limite %.1f W) - rotor preso!", x, id(numero_potencia_maxima).state);
                 id(goto_state).execute(6);
-              } else if (x < id(numero_corrente_minima).state) {
-                ESP_LOGW("fsm", "SUBCORRENTE %.2f A (limite %.2f A) - bomba a seco!", x, id(numero_corrente_minima).state);
+              } else if (x < id(numero_potencia_minima).state) {
+                ESP_LOGW("fsm", "SUBPOTENCIA %.1f W (limite %.1f W) - bomba a seco!", x, id(numero_potencia_minima).state);
                 id(goto_state).execute(7);
               }
-    voltage:
-      name: "Tensão da Rede"
-      accuracy_decimals: 1
-    power:
-      name: "Potência da Bomba"
-      accuracy_decimals: 1
     energy:
       id: pzem_energia_sensor
       name: "Energia Consumida"
@@ -1073,11 +1076,10 @@ sensor:
   # ---- Resultado do teste manual da bomba (ver script testar_bomba) ----
   - platform: template
     id: teste_regime_sensor
-    name: "Corrente de Regime (Teste)"
-    icon: mdi:current-ac
-    unit_of_measurement: "A"
-    accuracy_decimals: 2
-    device_class: current
+    name: "Potência de Regime (Teste)"
+    icon: mdi:flash
+    unit_of_measurement: "W"
+    accuracy_decimals: 0
 
   # ---- Métricas de ciclo de enchimento (atualizadas a cada término com sucesso) ----
   - platform: template
@@ -1086,6 +1088,14 @@ sensor:
     icon: mdi:timer-outline
     unit_of_measurement: "min"
     accuracy_decimals: 1
+    state_class: measurement
+
+  - platform: template
+    id: sensor_potencia_media_ultimo_ciclo
+    name: "Potência Média do Último Enchimento"
+    icon: mdi:lightning-bolt
+    unit_of_measurement: "W"
+    accuracy_decimals: 0
     state_class: measurement
 
   - platform: template
@@ -1246,30 +1256,30 @@ number:
     initial_value: 15
 
   - platform: template
-    id: numero_corrente_maxima
-    name: "Corrente Máxima (Rotor Preso)"
-    icon: mdi:current-ac
-    unit_of_measurement: "A"
-    min_value: 0.5
-    max_value: 8.0
-    step: 0.1
+    id: numero_potencia_maxima
+    name: "Potência Máxima (Rotor Preso)"
+    icon: mdi:flash-alert
+    unit_of_measurement: "W"
+    min_value: 100.0
+    max_value: 1500.0
+    step: 10.0
     mode: box
     optimistic: true
     restore_value: true
-    initial_value: 3.0
+    initial_value: 600.0
 
   - platform: template
-    id: numero_corrente_minima
-    name: "Corrente Mínima (Bomba a Seco)"
-    icon: mdi:current-ac
-    unit_of_measurement: "A"
-    min_value: 0.1
-    max_value: 3.0
-    step: 0.05
+    id: numero_potencia_minima
+    name: "Potência Mínima (Bomba a Seco)"
+    icon: mdi:flash-outline
+    unit_of_measurement: "W"
+    min_value: 50.0
+    max_value: 800.0
+    step: 10.0
     mode: box
     optimistic: true
     restore_value: true
-    initial_value: 1.0
+    initial_value: 200.0
 
 # =====================================================================
 #  INTERFACE COM O HOME ASSISTANT
@@ -1329,11 +1339,11 @@ button:
     on_press:
       - script.execute: clique_longo
 
-  # Roda a bomba por 10s a partir do Standby, medindo corrente de regime
-  # para calibrar os `number` de corrente acima.
+  # Roda a bomba por 10s a partir do Standby, medindo potência de regime
+  # para calibrar os `number` de potência acima.
   - platform: template
     id: botao_testar_bomba
-    name: "Testar Bomba (Medir Corrente)"
+    name: "Testar Bomba (Medir Potência)"
     icon: mdi:test-tube
     on_press:
       - script.execute: testar_bomba

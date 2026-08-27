@@ -176,10 +176,10 @@ cards:
     entities:
       - entity: number.caixa_d_agua_tempo_maximo_da_bomba_inching
         name: "Tempo máximo da bomba (inching)"
-      - entity: number.caixa_d_agua_corrente_maxima_rotor_preso
-        name: "Corrente máxima (rotor preso)"
-      - entity: number.caixa_d_agua_corrente_minima_bomba_a_seco
-        name: "Corrente mínima (bomba a seco)"
+      - entity: number.caixa_d_agua_potencia_maxima_rotor_preso
+        name: "Potência máxima (rotor preso)"
+      - entity: number.caixa_d_agua_potencia_minima_bomba_a_seco
+        name: "Potência mínima (bomba a seco)"
   - type: entities
     title: Métricas
     entities:
@@ -187,6 +187,8 @@ cards:
         name: "Horas de uso da bomba"
       - entity: sensor.caixa_d_agua_tempo_do_ultimo_enchimento
         name: "Tempo do último enchimento"
+      - entity: sensor.caixa_d_agua_potencia_media_do_ultimo_enchimento
+        name: "Potência média do último enchimento"
       - entity: sensor.caixa_d_agua_energia_do_ultimo_enchimento
         name: "Energia consumida no ciclo"
       - entity: sensor.caixa_d_agua_energia_consumida
@@ -194,10 +196,10 @@ cards:
   - type: entities
     title: Testes e Calibração
     entities:
-      - entity: button.caixa_d_agua_testar_bomba_medir_corrente
+      - entity: button.caixa_d_agua_testar_bomba_medir_potencia
         name: "Testar bomba (10s)"
-      - entity: sensor.caixa_d_agua_corrente_de_regime_teste
-        name: "Corrente de regime (último teste)"
+      - entity: sensor.caixa_d_agua_potencia_de_regime_teste
+        name: "Potência de regime (último teste)"
       - entity: button.caixa_d_agua_testar_cores_do_led_varredura_360deg
         name: "Testar cores do LED (Varredura 360°)"
   - type: entities
@@ -207,10 +209,10 @@ cards:
         name: "Estado FSM"
       - entity: sensor.caixa_d_agua_tensao_boias
         name: "Tensão Boias (ADC)"
-      - entity: sensor.caixa_d_agua_corrente_da_bomba
-        name: "Corrente da Bomba (PZEM)"
       - entity: sensor.caixa_d_agua_potencia_da_bomba
-        name: "Potência Ativa"
+        name: "Potência Ativa (PZEM)"
+      - entity: sensor.caixa_d_agua_corrente_da_bomba
+        name: "Corrente da Bomba"
       - entity: sensor.caixa_d_agua_nivel_da_caixa
         name: "Nível Bruto (Boias)"
       - entity: sensor.caixa_d_agua_ultima_ocorrencia
