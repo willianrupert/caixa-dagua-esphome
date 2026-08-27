@@ -204,7 +204,7 @@ cards:
         name: "Testar bomba (10s)"
       - entity: sensor.caixa_d_agua_corrente_de_regime_teste
         name: "Corrente de regime (último teste)"
-      - entity: button.caixa_d_agua_testar_cores_do_led_varredura_360
+      - entity: button.caixa_d_agua_testar_cores_do_led_varredura_360deg
         name: "Testar cores do LED (Varredura 360°)"
   - type: entities
     title: Diagnóstico e Engenharia
