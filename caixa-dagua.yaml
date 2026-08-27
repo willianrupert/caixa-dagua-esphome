@@ -291,6 +291,24 @@ globals:
     restore_value: false
     initial_value: 'NAN'
 
+  # ---- Telemetria dos ciclos de enchimento ----
+  - id: ciclo_inicio_ms
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
+  - id: ciclo_energia_inicio
+    type: float
+    restore_value: false
+    initial_value: '0.0'
+  - id: duracao_ultimo_ciclo_s
+    type: uint32_t
+    restore_value: true
+    initial_value: '0'
+  - id: energia_ultimo_ciclo_wh
+    type: float
+    restore_value: true
+    initial_value: '0.0'
+
 # =====================================================================
 #  NÚCLEO DA FSM
 # =====================================================================
@@ -361,9 +379,31 @@ script:
           bool bomba = (novo == 2 || novo == 3);
           if (bomba && !id(rele_bomba).state) {
             id(pump_started_at) = millis();  // inicia blanking do PZEM
+            id(ciclo_inicio_ms) = millis();  // marca início da contagem do ciclo
+            id(ciclo_energia_inicio) = id(pzem_energia_sensor).has_state() ? id(pzem_energia_sensor).state : 0.0f;
             id(rele_bomba).turn_on();
             id(limite_bomba_timer).execute();
           } else if (!bomba && id(rele_bomba).state) {
+            // Se estava bombeando e finalizou com sucesso (E4), registra telemetria do ciclo
+            if (novo == 4 && id(ciclo_inicio_ms) > 0) {
+              uint32_t dt_s = (millis() - id(ciclo_inicio_ms)) / 1000;
+              id(duracao_ultimo_ciclo_s) = dt_s;
+              id(sensor_duracao_ultimo_ciclo).publish_state(dt_s / 60.0f);
+
+              uint32_t mins = dt_s / 60;
+              uint32_t segs = dt_s % 60;
+              char buf_t[32];
+              snprintf(buf_t, sizeof(buf_t), "%u min %02u s", mins, segs);
+              id(texto_duracao_ultimo_ciclo).publish_state(buf_t);
+
+              if (id(pzem_energia_sensor).has_state() && id(ciclo_energia_inicio) >= 0.0f) {
+                float d_wh = id(pzem_energia_sensor).state - id(ciclo_energia_inicio);
+                if (d_wh >= 0.0f) {
+                  id(energia_ultimo_ciclo_wh) = d_wh;
+                  id(sensor_energia_ultimo_ciclo).publish_state(d_wh);
+                }
+              }
+            }
             id(rele_bomba).turn_off();  // pausa/falha desligam IMEDIATAMENTE
             id(pump_stopped_at) = millis();  // tolerância da corrente fantasma
             id(limite_bomba_timer).stop();
@@ -656,6 +696,19 @@ script:
       - script.execute: animacao_boot
       - delay: 2s   # estabiliza a leitura do ADC e absorve flicker de rede
       - lambda: |-
+          if (id(duracao_ultimo_ciclo_s) > 0) {
+            uint32_t dt_s = id(duracao_ultimo_ciclo_s);
+            id(sensor_duracao_ultimo_ciclo).publish_state(dt_s / 60.0f);
+            uint32_t mins = dt_s / 60;
+            uint32_t segs = dt_s % 60;
+            char buf_t[32];
+            snprintf(buf_t, sizeof(buf_t), "%u min %02u s", mins, segs);
+            id(texto_duracao_ultimo_ciclo).publish_state(buf_t);
+          }
+          if (id(energia_ultimo_ciclo_wh) > 0.0f) {
+            id(sensor_energia_ultimo_ciclo).publish_state(id(energia_ultimo_ciclo_wh));
+          }
+
           int salvo = id(fsm_state);
           ESP_LOGI("fsm", "E9 Boot Seguro. Estado gravado na flash: %d", salvo);
           if (salvo == 8) {                       // caiu em Pausa -> permanece travado
@@ -978,6 +1031,7 @@ sensor:
       name: "Potência da Bomba"
       accuracy_decimals: 1
     energy:
+      id: pzem_energia_sensor
       name: "Energia Consumida"
 
   - platform: wifi_signal
@@ -993,6 +1047,24 @@ sensor:
     unit_of_measurement: "A"
     accuracy_decimals: 2
     device_class: current
+
+  # ---- Métricas de ciclo de enchimento (atualizadas a cada término com sucesso) ----
+  - platform: template
+    id: sensor_duracao_ultimo_ciclo
+    name: "Duração do Último Enchimento (min)"
+    icon: mdi:timer-outline
+    unit_of_measurement: "min"
+    accuracy_decimals: 1
+    state_class: measurement
+
+  - platform: template
+    id: sensor_energia_ultimo_ciclo
+    name: "Energia do Último Enchimento"
+    icon: mdi:lightning-bolt-outline
+    unit_of_measurement: "Wh"
+    accuracy_decimals: 1
+    device_class: energy
+    state_class: measurement
 
 # =====================================================================
 #  SAÍDAS
@@ -1187,6 +1259,12 @@ text_sensor:
     id: ocorrencia_texto
     name: "Última Ocorrência"
     icon: mdi:alert-circle-outline
+
+  # Formato texto amigável do último tempo de enchimento (ex: "12 min 32 s")
+  - platform: template
+    id: texto_duracao_ultimo_ciclo
+    name: "Tempo do Último Enchimento"
+    icon: mdi:clock-check-outline
 
 button:
   # Espelham exatamente o botão físico — mesma lógica, sem atalhos inseguros

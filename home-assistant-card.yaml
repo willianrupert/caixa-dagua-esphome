@@ -189,6 +189,17 @@ cards:
       - entity: number.caixa_d_agua_corrente_minima_bomba_a_seco
         name: "Corrente mínima (bomba a seco)"
   - type: entities
+    title: Métricas do Último Enchimento
+    entities:
+      - entity: sensor.caixa_d_agua_tempo_do_ultimo_enchimento
+        name: "Tempo do último enchimento"
+      - entity: sensor.caixa_d_agua_duracao_do_ultimo_enchimento_min
+        name: "Duração em minutos"
+      - entity: sensor.caixa_d_agua_energia_do_ultimo_enchimento
+        name: "Energia consumida no ciclo"
+      - entity: sensor.caixa_d_agua_energia_consumida
+        name: "Energia total acumulada"
+  - type: entities
     title: Testes e Calibração
     entities:
       - entity: button.caixa_d_agua_testar_bomba_medir_corrente
