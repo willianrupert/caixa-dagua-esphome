@@ -210,7 +210,7 @@ cards:
     title: Diagnóstico e Engenharia
     entities:
       - entity: sensor.caixa_d_agua_estado_do_sistema
-        name: "Estado FSM (Desenvolvedor)"
+        name: "Estado FSM"
       - entity: sensor.caixa_d_agua_tensao_boias
         name: "Tensão Boias (ADC)"
       - entity: sensor.caixa_d_agua_corrente_da_bomba
