@@ -129,14 +129,11 @@ substitutions:
   # DE CONFIGURAÇÃO, mais abaixo). Os valores abaixo são só os defaults de
   # fábrica usados na 1ª partida (depois disso quem manda é o valor salvo).
 
-  # Janela entre "decidiu bombear" e o relé fechar. Era 5s, com o LED em
-  # vermelho sólido anunciando a partida; virou 300ms em 2026-08-26 porque o
-  # anúncio custava mais do que valia. Quem dá o clique já está na frente do
-  # botão e não precisa ser avisado, e a espera longa fazia a interface
-  # parecer travada. O passo continua existindo: o pre_partida_timer relê o
-  # estado antes de fechar o contator, então uma pausa ou uma mudança de
-  # nível no meio ainda aborta a partida.
-  tempo_pre_partida: 300ms
+  # Janela entre "decidiu bombear" e o relé fechar:
+  #   - Auto-partida crítica (caixa esvaziou): 5s com LED VERMELHO SÓLIDO,
+  #     anunciando que o nível baixo foi atingido antes de ligar a bomba.
+  #   - Partida manual (clique no botão): 300ms com LED AZUL, para resposta
+  #     imediata ao usuário sem parecer travada.
   tempo_verde_sucesso: 60s # duração do LED verde em E4
   blanking_ms: "5000"      # cegueira de partida do PZEM (ms)
 
@@ -323,7 +320,8 @@ script:
             else if (lvl == 4) st = "Falha Sensor";
             else               st = "Standby";
           } else if (novo == 1) {
-            st = "Iniciando...";
+            if (!id(manual_mode) && id(water_level) == 2) st = "Nível Baixo (Ligando em 5s)";
+            else                                          st = "Iniciando...";
           } else if (novo == 2 || novo == 3) {
             st = "Enchendo...";
           } else if (novo == 4) {
@@ -359,7 +357,7 @@ script:
 
           // --- Bomba: liga somente em E2/E3; qualquer outro estado desliga ---
           // O limite de tempo (inching) segue o RELÉ, não o estado: a transição
-          // E2->E3 não reinicia a contagem dos 10 minutos.
+          // E2->E3 não reinicia a contagem dos 15 minutos.
           bool bomba = (novo == 2 || novo == 3);
           if (bomba && !id(rele_bomba).state) {
             id(pump_started_at) = millis();  // inicia blanking do PZEM
@@ -396,15 +394,12 @@ script:
           } else {
             float r = 0, g = 0, b = 0;
             switch (novo) {
-              // E1 não tem cor própria: mostra JÁ a cor do estado que vai
-              // assumir. Antes era vermelho sólido, que na tabela de cores
-              // significa "caixa vazia" — dizer isso durante uma partida
-              // manual com a caixa pela metade era a interface mentindo.
-              // A condição abaixo espelha exatamente a decisão do
-              // pre_partida_timer; se uma mudar, a outra tem que mudar junto.
+              // E1: na auto-partida crítica (caixa vazia), acende VERMELHO SÓLIDO
+              // por 5s anunciando o nível crítico antes de dar a partida.
+              // Na partida manual, resposta rápida de 300ms em AZUL.
               case 1:
-                if (!id(manual_mode) && id(water_level) == 2) { r = 1; b = 1; }  // roxo, vira E2
-                else                                          { b = 1; }        // azul, vira E3
+                if (!id(manual_mode) && id(water_level) == 2) { r = 1; }        // Vermelho sólido: nível crítico!
+                else                                          { b = 1; }        // Azul: partida manual ágil
                 break;
               case 2: r = 1; b = 1; break;  // Roxo/Pink: enchendo crítico
               case 3: b = 1;        break;  // Azul: intermediário/manual
@@ -477,10 +472,14 @@ script:
             - delay: 70ms
 
   # ---- E1: delay de pré-partida, depois decide E2 ou E3 ----
+  # Auto-partida crítica espera 5s com LED vermelho sólido (aviso).
+  # Partida manual espera apenas 300ms com LED azul.
   - id: pre_partida_timer
     mode: restart
     then:
-      - delay: ${tempo_pre_partida}
+      - delay: !lambda |-
+          if (!id(manual_mode) && id(water_level) == 2) return 5000;
+          return 300;
       - lambda: |-
           if (id(fsm_state) != 1) return;  // pausa/nível cancelaram no meio
           if (id(manual_mode))            id(goto_state).execute(3);

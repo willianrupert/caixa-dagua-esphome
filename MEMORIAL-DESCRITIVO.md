@@ -93,15 +93,16 @@ Se o sistema salvasse "bomba ligada" e religasse o relé direto no boot, haveria
 | # | Situação | Cor |
 |---|---|---|
 | 1 | Caixa OK / Standby | **Apagado** |
-| 2 | Pré-partida (E1) | **A cor do destino** — azul se vai para E3, roxo se vai para E2. Ver 3.2 |
-| 3 | Enchendo — nível crítico | **Roxo/Pink** (Vermelho + Azul simultâneos) |
-| 4 | Enchendo — nível intermediário / manual | **Azul sólido** |
-| 5 | Caixa encheu (sucesso) | **Verde sólido por 1 minuto** |
-| 6 | Modo Pausa **manual** (manutenção) | **Amarelo sólido indefinido** (Vermelho + Verde) |
-| 7 | Pausa **automática** (inching / falha de sensor) | **Amarelo piscando lento** (700 ms) |
-| 8 | Falha corrente alta (rotor preso) | **Vermelho piscando** |
-| 9 | Falha corrente baixa (sem água) | **Azul piscando** |
-| 10 | Falha de contator (corrente fantasma) | **Branco piscando rápido** (300 ms) — desligue o disjuntor, salvo se a chave estiver em MANUAL |
+| 2 | Pré-partida Auto (Nível Crítico) | **Vermelho sólido por 5 s** (aviso de caixa vazia antes de ligar) |
+| 3 | Pré-partida Manual | **Azul por 300 ms** (resposta ágil ao clique) |
+| 4 | Enchendo — nível crítico | **Roxo/Pink** (Vermelho + Azul simultâneos) |
+| 5 | Enchendo — nível intermediário / manual | **Azul sólido** |
+| 6 | Caixa encheu (sucesso) | **Verde sólido por 1 minuto** |
+| 7 | Modo Pausa **manual** (manutenção) | **Amarelo sólido indefinido** (Vermelho + Verde) |
+| 8 | Pausa **automática** (inching / falha de sensor) | **Amarelo piscando lento** (700 ms) |
+| 9 | Falha corrente alta (rotor preso) | **Vermelho piscando** |
+| 10 | Falha corrente baixa (sem água) | **Azul piscando** |
+| 11 | Falha de contator (corrente fantasma) | **Branco piscando rápido** (300 ms) — desligue o disjuntor, salvo se a chave estiver em MANUAL |
 
 ### 3.1 Varredura de matiz no boot
 
@@ -127,32 +128,18 @@ interrompa o fade anterior no meio. A cor nunca "chega e senta" — é
 movimento contínuo, não 24 saltos.
 
 
-### 3.2 Por que o E1 não tem cor própria
+### 3.2 Comportamento da Pré-partida (E1): Auto vs. Manual
 
-Até 2026-08-26 o E1 Pré-partida acendia **vermelho sólido** por 5 segundos
-antes de ligar a bomba. Duas coisas estavam erradas nisso.
+A pré-partida (E1) diferencia a **origem** do comando para unir aviso visual e ergonomia:
 
-**A cor mentia.** Vermelho sólido está definido na tabela acima como "caixa
-vazia". Numa partida manual com a caixa em nível intermediário, o sistema
-anunciava vazio quando não estava — e a cor é a interface deste projeto,
-então isso não é detalhe estético.
+1. **Auto-partida por Nível Crítico (caixa esvaziou):**
+   - Quando as boias detectam que o nível caiu para o Crítico, o LED acende em **Vermelho Sólido por 5 segundos**.
+   - **A cor conta a verdade:** a caixa está de fato vazia/crítica, e a janela de 5s avisa quem estiver na cozinha que a caixa secou e que o motor vai ligar em instantes.
+   - Aos 5 segundos, a bomba parte e o LED muda para **Roxo/Pink (E2 Recalque Crítico)**.
 
-**A espera custava mais do que valia.** Os 5 segundos existiam para anunciar
-a partida a quem estivesse por perto. Mas quem dá o clique já está na frente
-do botão e não precisa ser avisado do que acabou de mandar fazer; e do lado
-da partida automática não há ninguém olhando para ser avisado. O que sobrava
-era uma interface que parecia travada depois do toque.
-
-**O que passou a valer:** a janela caiu para **300 ms** e o E1 mostra desde
-já a cor do estado que vai assumir — azul se vai para E3, roxo se vai para
-E2. Na prática o LED responde ao toque instantaneamente e não pisca uma cor
-intermediária no caminho.
-
-**O passo lógico continua existindo**, e não é decorativo: o
-`pre_partida_timer` relê o estado antes de fechar o contator, então um clique
-longo (pausa) ou uma mudança de nível dentro da janela ainda abortam a
-partida — incluindo o caso "encheu na espera", que devolve para E0 sem ligar
-a bomba.
+2. **Partida Manual (clique no botão):**
+   - Quando o usuário toca no botão da cozinha (em nível intermediário), a janela é de apenas **300 ms** com LED **Azul**.
+   - O acionamento é instantâneo e não faz o usuário ficar esperando na frente do botão.
 
 > ⚠️ A condição que escolhe a cor do E1 em `goto_state` **espelha** a decisão
 > do `pre_partida_timer`. São dois lugares que precisam concordar: se um dia

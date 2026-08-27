@@ -31,7 +31,7 @@ stateDiagram-v2
     [*] --> E9: energia voltou
     E9: E9 Boot Seguro
     E0: E0 Standby (LED apagado)
-    E1: E1 Pré-partida (300ms, cor do destino)
+    E1: E1 Pré-partida (5s auto / 300ms manual)
     E2: E2 Recalque crítico (roxo)
     E3: E3 Recalque interm./manual (azul)
     E4: E4 Caixa cheia (verde, 1 min)
@@ -47,7 +47,7 @@ stateDiagram-v2
 
     E0 --> E1: nível crítico (auto) ou clique curto
     E1 --> E2: após 5s, nível crítico
-    E1 --> E3: após 5s, manual/intermediário
+    E1 --> E3: após 300ms, manual/intermediário
     E2 --> E3: nível saiu do crítico
     E2 --> E4: boia máxima fechou
     E3 --> E4: boia máxima fechou
@@ -62,8 +62,8 @@ stateDiagram-v2
     E7 --> E0: clique curto (reset)
     E5 --> E0: clique curto (reset)
 
-    E2 --> E8: inching 10 min ⏱️
-    E3 --> E8: inching 10 min ⏱️
+    E2 --> E8: inching 15 min ⏱️
+    E3 --> E8: inching 15 min ⏱️
     E8 --> E0: clique longo (reavalia a casa)
 ```
 
@@ -73,25 +73,25 @@ stateDiagram-v2
 
 | Cor | Significado |
 |---|---|
-| ⚫ Apagado | Standby — tudo OK |
-
+| ⚫ Apagado | Standby — tudo OK / Repouso |
+| 🔴 Vermelho sólido (5s) | **Nível crítico atingido** — aviso de partida automática em 5s |
 | 🟣 Roxo/Pink | Enchendo — nível crítico |
 | 🔵 Azul sólido | Enchendo — intermediário ou manual |
-| 🟢 Verde (1 min) | Caixa encheu! |
+| 🟢 Verde sólido (1 min) | Caixa encheu! |
 | 🟡 Amarelo sólido | Pausa manual (manutenção) |
-| 🟡 Amarelo piscando | **Pausa automática** — inching ou falha de sensor |
+| 🟡 Amarelo piscando | **Pausa automática** — inching (15 min) ou falha de sensor |
 | 🔴 Vermelho piscando | Falha: rotor preso (sobrecorrente) |
 | 🔵 Azul piscando | Falha: bomba a seco (subcorrente) |
 | ⚪ Branco piscando | **Contator soldado — desligue o disjuntor!** (ou chave de bypass em MANUAL) |
 
 ## 🛡️ As 9 Regras de Segurança
 
-1. **Nunca religa a bomba direto no boot** — todo boot passa pela rotina E9: relê boias, 5 s de pré-partida e 5 s de *blanking* no monitor de corrente.
+1. **Nunca religa a bomba direto no boot** — todo boot passa pela rotina E9: relê boias, pré-partida e 5 s de *blanking* no monitor de corrente.
 2. **Pausa é soberana** — clique longo desliga o motor imediatamente de qualquer estado.
 3. **Falhas exigem reconhecimento humano** — E5/E6/E7 só destravam com clique curto, mesmo após apagão.
 4. **Flash grava só em mudança de estado** — durabilidade de décadas.
 5. **Modo Pausa ignora as boias** — nada liga a bomba durante manutenção.
-6. **Inching de 10 minutos** — limite físico de funcionamento contínuo.
+6. **Inching de 15 minutos** — limite físico de funcionamento contínuo (folgado sobre os ~12m30s reais).
 7. **Nunca reinicia por falta de rede** — `reboot_timeout: 0s` no Wi-Fi e na API.
 8. **Corrente fantasma alarma sempre** — contator soldado é detectado em qualquer estado.
 9. **Sensor de nível supervisionado** — o sistema nunca opera "no escuro".
