@@ -604,6 +604,49 @@ script:
                 tag: teste
                 format: "Teste de bomba ignorado: sistema nao esta pronto em Standby"
 
+  # ---- Teste manual do LED RGB: varredura 360° de matiz sob demanda ----
+  - id: testar_led
+    mode: restart
+    then:
+      - script.execute: animacao_boot
+      - delay: 2100ms
+      - lambda: |-
+          // Restaura a cor correspondente ao estado atual da FSM
+          int s = id(fsm_state);
+          if (s == 0) {
+            auto c = id(led_cozinha).turn_off();
+            c.set_effect("None");
+            c.set_transition_length(800);
+            c.perform();
+          } else {
+            float r = 0, g = 0, b = 0;
+            switch (s) {
+              case 1:
+                if (!id(manual_mode) && id(water_level) == 2) { r = 1; }
+                else                                          { b = 1; }
+                break;
+              case 2: r = 1; b = 1; break;
+              case 3: b = 1;        break;
+              case 4: g = 1;        break;
+              case 5: r = 1; g = 1; b = 1; break;
+              case 6: r = 1;        break;
+              case 7: b = 1;        break;
+              case 8: r = 1; g = 1; break;
+            }
+            const char *efeito = nullptr;
+            if (s == 5)      efeito = "Falha Branco";
+            else if (s == 6) efeito = "Falha Vermelho";
+            else if (s == 7) efeito = "Falha Azul";
+            else if (s == 8 && id(pausa_automatica)) efeito = "Pausa Piscando";
+
+            auto c = id(led_cozinha).turn_on();
+            c.set_effect(efeito != nullptr ? efeito : "None");
+            c.set_brightness(1.0);
+            c.set_rgb(r, g, b);
+            c.set_transition_length(600);
+            c.perform();
+          }
+
   # ---- E9: Rotina de Boot Seguro (recuperação de apagão) ----
   - id: boot_seguro
     then:
@@ -1161,10 +1204,20 @@ button:
     on_press:
       - script.execute: clique_longo
 
-  # Roda a bomba por 10s a partir do Standby, medindo corrente de partida
-  # e de regime — usar para calibrar os `number` de corrente acima.
+  # Roda a bomba por 10s a partir do Standby, medindo corrente de regime
+  # para calibrar os `number` de corrente acima.
   - platform: template
+    id: botao_testar_bomba
     name: "Testar Bomba (Medir Corrente)"
     icon: mdi:test-tube
     on_press:
       - script.execute: testar_bomba
+
+  # Executa a varredura de matiz 360° no LED RGB (mesma animação do boot)
+  # para testar visualmente os canais R, G e B e suas misturas sob demanda.
+  - platform: template
+    id: botao_testar_led
+    name: "Testar Cores do LED (Varredura 360°)"
+    icon: mdi:palette
+    on_press:
+      - script.execute: testar_led

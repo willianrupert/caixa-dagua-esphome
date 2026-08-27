@@ -189,14 +189,14 @@ cards:
       - entity: number.caixa_d_agua_corrente_minima_bomba_a_seco
         name: "Corrente mínima (bomba a seco)"
   - type: entities
-    title: Teste Manual da Bomba
+    title: Testes e Calibração
     entities:
       - entity: button.caixa_d_agua_testar_bomba_medir_corrente
         name: "Testar bomba (10s)"
-      - entity: sensor.caixa_d_agua_corrente_de_partida_teste
-        name: "Corrente de partida (último teste)"
       - entity: sensor.caixa_d_agua_corrente_de_regime_teste
         name: "Corrente de regime (último teste)"
+      - entity: button.caixa_d_agua_testar_cores_do_led_varredura_360
+        name: "Testar cores do LED (Varredura 360°)"
   - type: entities
     title: Diagnóstico e Engenharia
     entities:
