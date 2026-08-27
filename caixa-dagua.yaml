@@ -1074,8 +1074,8 @@ light:
 #  NÚMEROS DE CONFIGURAÇÃO (ajustáveis pelo Home Assistant)
 # =====================================================================
 # `restore_value` grava na flash: uma vez ajustado pelo usuário, o valor
-# sobrevive a reboot/OTA. O valor inicial é o mesmo default histórico
-# do projeto (10 min / 3.0 A / 0.5 A).
+# sobrevive a reboot/OTA. O valor inicial é o default de fábrica
+# calibrado em campo (15 min / 3.0 A / 1.0 A).
 number:
   - platform: template
     id: numero_tempo_maximo_bomba
@@ -1088,7 +1088,7 @@ number:
     mode: box
     optimistic: true
     restore_value: true
-    initial_value: 10
+    initial_value: 15
 
   - platform: template
     id: numero_corrente_maxima
@@ -1114,7 +1114,7 @@ number:
     mode: box
     optimistic: true
     restore_value: true
-    initial_value: 0.5
+    initial_value: 1.0
 
 # =====================================================================
 #  INTERFACE COM O HOME ASSISTANT

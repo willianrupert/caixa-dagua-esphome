@@ -70,8 +70,8 @@ Se o sistema salvasse "bomba ligada" e religasse o relé direto no boot, haveria
 
 ### Proteção de Inching — Tempo Máximo de Bomba Ligada
 - **Cenário coberto:** a boia superior quebra e nunca sinaliza "caixa cheia" — sem esta regra, a bomba ficaria ligada indefinidamente (transbordo + desgaste do motor).
-- **Regra:** a bomba não pode ficar ligada por mais de **10 minutos contínuos** (E2/E3). Ao estourar o limite, o sistema entra em **Pausa Automática (E8)**: desliga tudo, LED **amarelo piscando** (distinto da pausa manual, que é sólido), e fica travado até o clique longo do usuário.
-- A contagem segue o **relé físico**, não o estado lógico: a transição E2 → E3 (nível saiu do crítico) **não** reinicia os 10 minutos. Cada nova partida da bomba zera a contagem.
+- **Regra:** a bomba não pode ficar ligada por mais de **15 minutos contínuos** (E2/E3) — dimensionado com ~20% de folga sobre o tempo real medido em campo (~12m30s de vazio até cheio). Ao estourar o limite, o sistema entra em **Pausa Automática (E8)**: desliga tudo, LED **amarelo piscando** (distinto da pausa manual, que é sólido), e fica travado até o clique longo do usuário.
+- A contagem segue o **relé físico**, não o estado lógico: a transição E2 → E3 (nível saiu do crítico) **não** reinicia a contagem. Cada nova partida da bomba zera a contagem.
 - Por que Pausa e não Falha (E6/E7): estouro de tempo indica problema de **sensor**, não do motor — exige inspeção humana da caixa antes de qualquer religamento, e o E8 é o único estado que ignora completamente as boias.
 - Calibrável via substitution `tempo_maximo_bomba` no `caixa-dagua.yaml` (dimensionar folgado acima do tempo real de enchimento).
 
@@ -456,7 +456,7 @@ canal. Só vale se a medição de brilho reprovar.
 3. **Falhas exigem reconhecimento humano** — E6/E7 só destravam com clique curto, inclusive após apagão.
 4. **Flash só grava em mudança de estado** — jamais gravação periódica (proteção contra desgaste).
 5. **Modo Pausa ignora boias** — nenhuma variação de nível liga a bomba durante manutenção.
-6. **Inching de 10 minutos** — a bomba nunca fica ligada mais de 10 min contínuos; se estourar (boia superior quebrada?), entra em Pausa Automática (amarelo piscando) e exige clique longo para destravar.
+6. **Inching de 15 minutos** — a bomba nunca fica ligada mais de 15 min contínuos (calibrado com folga sobre os ~12m30s reais); se estourar (boia superior quebrada?), entra em Pausa Automática (amarelo piscando) e exige clique longo para destravar.
 7. **Nunca reiniciar por falta de rede** — `reboot_timeout: 0s` no Wi-Fi e na API. Sem isso, o padrão do ESPHome reiniciaria o chip a cada 15 min sem Wi-Fi/HA, violando a autonomia local.
 8. **Corrente fantasma alarma sempre** — corrente com relé desligado = contator soldado (E5, branco piscando), detectado em qualquer estado, inclusive na Pausa. A chave de bypass em MANUAL produz a mesma assinatura e também alarma: é deliberado, ver 4.2.1.
 9. **Sensor de nível supervisionado** — cabo rompido, em curto ou desconectado é detectado pelo laço EOL e leva à Pausa Automática; o sistema nunca opera "no escuro".
