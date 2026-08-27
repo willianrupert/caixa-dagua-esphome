@@ -107,7 +107,7 @@ elements:
       left: 50%
       transform: translate(-50%, -50%)
       font-size: 12px
-      font-weight: "400"
+      font-weight: "600"
       line-height: 16px
       pointer-events: none
       color: var(--secondary-text-color)
