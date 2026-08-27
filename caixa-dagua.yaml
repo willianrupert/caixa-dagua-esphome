@@ -289,10 +289,6 @@ globals:
     type: uint32_t
     restore_value: false
     initial_value: '0'
-  - id: teste_pico_partida
-    type: float
-    restore_value: false
-    initial_value: '0'
   - id: teste_regime
     type: float
     restore_value: false
@@ -316,6 +312,32 @@ script:
           ESP_LOGI("fsm", "Transicao -> %s", NOMES[novo]);
           id(fsm_state) = novo;  // persiste na flash (flash_write_interval: 0s)
           id(fsm_texto).publish_state(NOMES[novo]);
+          id(nome_dispositivo).publish_state("Caixa D'Água");
+
+          const char *st = "Standby";
+          if (novo == 0) {
+            int lvl = id(water_level);
+            if (lvl == 0)      st = "Cheia";
+            else if (lvl == 1) st = "Intermediária";
+            else if (lvl == 2) st = "Nível Baixo";
+            else if (lvl == 4) st = "Falha Sensor";
+            else               st = "Standby";
+          } else if (novo == 1) {
+            st = "Iniciando...";
+          } else if (novo == 2 || novo == 3) {
+            st = "Enchendo...";
+          } else if (novo == 4) {
+            st = "Enchimento Concluído";
+          } else if (novo == 5) {
+            st = "Falha Contator";
+          } else if (novo == 6) {
+            st = "Falha Rotor Preso";
+          } else if (novo == 7) {
+            st = "Falha Sem Água";
+          } else if (novo == 8) {
+            st = "Pausada";
+          }
+          id(status_amigavel).publish_state(st);
 
           // cancela timers de estados anteriores
           id(pre_partida_timer).stop();
@@ -533,7 +555,7 @@ script:
             id(goto_state).execute(8);
           }
 
-  # ---- Teste manual da bomba: mede corrente de partida e de regime ----
+  # ---- Teste manual da bomba: mede corrente de regime ----
   # Só roda a partir do Standby (E0), fora da FSM normal, por uma janela fixa
   # e travada de 10s — serve para calibrar numero_corrente_maxima/minima com
   # segurança, sem depender só da pinça amperimétrica na instalação.
@@ -544,7 +566,6 @@ script:
             lambda: 'return id(fsm_state) == 0 && !id(rele_bomba).state;'
           then:
             - lambda: |-
-                id(teste_pico_partida) = 0;
                 id(teste_regime) = NAN;
                 id(teste_inicio) = millis();
                 id(teste_ativo) = true;
@@ -570,15 +591,12 @@ script:
                 auto c = id(led_cozinha).turn_off();
                 c.set_transition_length(500);  // explícito: não depender do default
                 c.perform();
-                id(teste_partida_sensor).publish_state(id(teste_pico_partida));
                 char buf[96];
                 if (!std::isnan(id(teste_regime))) {
                   id(teste_regime_sensor).publish_state(id(teste_regime));
-                  snprintf(buf, sizeof(buf), "Teste manual: partida %.2f A / regime %.2f A",
-                           id(teste_pico_partida), id(teste_regime));
+                  snprintf(buf, sizeof(buf), "Teste manual: regime %.2f A", id(teste_regime));
                 } else {
-                  snprintf(buf, sizeof(buf), "Teste manual: partida %.2f A (regime nao capturado)",
-                           id(teste_pico_partida));
+                  snprintf(buf, sizeof(buf), "Teste manual: regime nao capturado");
                 }
                 id(ocorrencia_texto).publish_state(buf);
           else:
@@ -813,6 +831,11 @@ sensor:
               id(water_level) = bruto;
               id(nivel_texto).publish_state(LVL[bruto]);
               ESP_LOGI("nivel", "Nivel inicial: %s (%.2f V)", LVL[bruto], x);
+              if (id(fsm_state) == 0) {
+                if (bruto == 0)      id(status_amigavel).publish_state("Cheia");
+                else if (bruto == 1) id(status_amigavel).publish_state("Intermediária");
+                else if (bruto == 2) id(status_amigavel).publish_state("Nível Baixo");
+              }
             } else if (bruto == id(water_level)) {
               id(nivel_contagem) = 0;  // leitura confirma o nível atual
             } else {
@@ -823,6 +846,11 @@ sensor:
                 id(nivel_contagem) = 0;
                 id(nivel_texto).publish_state(LVL[bruto]);
                 ESP_LOGI("nivel", "Nivel: %s (%.2f V)", LVL[bruto], x);
+                if (id(fsm_state) == 0) {
+                  if (bruto == 0)      id(status_amigavel).publish_state("Cheia");
+                  else if (bruto == 1) id(status_amigavel).publish_state("Intermediária");
+                  else if (bruto == 2) id(status_amigavel).publish_state("Nível Baixo");
+                }
               }
             }
 
@@ -850,9 +878,7 @@ sensor:
           - lambda: |-
               if (!id(teste_ativo) || std::isnan(x)) return;
               uint32_t dt = millis() - id(teste_inicio);
-              if (dt < 3000) {
-                if (x > id(teste_pico_partida)) id(teste_pico_partida) = x;  // pico de partida
-              } else if (dt >= 6000 && std::isnan(id(teste_regime))) {
+              if (dt >= 4000 && std::isnan(id(teste_regime))) {
                 id(teste_regime) = x;  // corrente já assentada (regime)
               }
               // Segurança absoluta do teste: corrente muito acima do limite
@@ -918,14 +944,6 @@ sensor:
     entity_category: diagnostic
 
   # ---- Resultado do teste manual da bomba (ver script testar_bomba) ----
-  - platform: template
-    id: teste_partida_sensor
-    name: "Corrente de Partida (Teste)"
-    icon: mdi:current-ac
-    unit_of_measurement: "A"
-    accuracy_decimals: 2
-    device_class: current
-
   - platform: template
     id: teste_regime_sensor
     name: "Corrente de Regime (Teste)"
@@ -1111,6 +1129,16 @@ text_sensor:
     id: nivel_texto
     name: "Nível da Caixa"
     icon: mdi:water-percent
+
+  - platform: template
+    id: status_amigavel
+    name: "Status"
+    icon: mdi:information-outline
+
+  - platform: template
+    id: nome_dispositivo
+    name: "Dispositivo"
+    icon: mdi:water-pump
 
   # Registro do "porquê" do último alarme (E5/E6/E7/inching) — post-mortem
   - platform: template

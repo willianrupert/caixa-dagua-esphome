@@ -81,38 +81,36 @@ elements:
       navigation_path: /casa-rlight/caixa-dagua-config
 
   # -------------------------------------------------------------
-  # 2) TEXTO DO ESTADO DA FSM — pointer-events: none, não compete com
+  # 2) TÍTULO E STATUS COMERCIAL — pointer-events: none, não compete com
   #    o fundo (o clique "atravessa" o texto e cai na camada 1).
-  #    Mostra o valor cru do sensor (ex. "E2 Recalque Critico"), não
-  #    a frase bonita que o mushroom-template-card montava via Jinja
-  #    — picture-elements nativo não faz template em campos de texto,
-  #    só o mushroom-template-card faz isso. Se quiser recuperar a
-  #    frase amigável ("Enchendo (crítico)"...) o caminho é instalar
-  #    card-mod (não instalado hoje).
+  #    - Linha 1: "Caixa D'Água" (padronizado com os outros cards)
+  #    - Linha 2: Status conciso de produto final (Cheia, Enchendo, etc.)
   # -------------------------------------------------------------
   - type: state-label
-    entity: sensor.caixa_d_agua_estado_do_sistema
+    entity: sensor.caixa_d_agua_dispositivo
     style:
       top: 18%
       left: 50%
       transform: translate(-50%, -50%)
       font-weight: "600"
-      font-size: 13px
+      font-size: 14px
       pointer-events: none
       color: var(--primary-text-color)
       width: 92%
       text-align: center
 
   - type: state-label
-    entity: sensor.caixa_d_agua_nivel_da_caixa
+    entity: sensor.caixa_d_agua_status
     style:
       top: 32%
       left: 50%
       transform: translate(-50%, -50%)
-      font-size: 11px
+      font-size: 12px
       opacity: 0.7
       pointer-events: none
       color: var(--secondary-text-color)
+      width: 92%
+      text-align: center
 
   # -------------------------------------------------------------
   # 3) BOTÃO REDONDO CENTRAL — espelha o botão físico da cozinha.
@@ -160,10 +158,8 @@ grid_options:
   rows: 2
 
 # ---------------------------------------------------------------------
-# NOTA sobre os entity_id: os 3 number + o button de teste + os 2
-# sensores de teste já existem no HA (ESP32 regravado com este
-# caixa-dagua.yaml em 2026-07-21). Se algum entity_id não bater, confira
-# em Ferramentas do Desenvolvedor → Estados.
+# NOTA sobre os entity_id: os sensores e controles já estão
+# sincronizados com o caixa-dagua.yaml via ESPHome Native API.
 # =====================================================================
 
 ---
@@ -202,9 +198,17 @@ cards:
       - entity: sensor.caixa_d_agua_corrente_de_regime_teste
         name: "Corrente de regime (último teste)"
   - type: entities
-    title: Diagnóstico
+    title: Diagnóstico e Engenharia
     entities:
-      - entity: sensor.caixa_d_agua_ultima_ocorrencia
-        name: "Última ocorrência"
+      - entity: sensor.caixa_d_agua_estado_do_sistema
+        name: "Estado FSM (Desenvolvedor)"
+      - entity: sensor.caixa_d_agua_tensao_boias
+        name: "Tensão Boias (ADC)"
+      - entity: sensor.caixa_d_agua_corrente_da_bomba
+        name: "Corrente da Bomba (PZEM)"
+      - entity: sensor.caixa_d_agua_potencia_da_bomba
+        name: "Potência Ativa"
       - entity: sensor.caixa_d_agua_nivel_da_caixa
-        name: "Nível da caixa"
+        name: "Nível Bruto (Boias)"
+      - entity: sensor.caixa_d_agua_ultima_ocorrencia
+        name: "Última Ocorrência"
