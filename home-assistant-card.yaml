@@ -81,51 +81,41 @@ elements:
       navigation_path: /casa-rlight/caixa-dagua-config
 
   # -------------------------------------------------------------
-  # 2) TÍTULO E STATUS COMERCIAL — pointer-events: none, não compete com
-  #    o fundo (o clique "atravessa" o texto e cai na camada 1).
-  #    - Linha 1: "Caixa D'Água" (padronizado com os outros cards)
-  #    - Linha 2: Status conciso de produto final (Cheia, Enchendo, etc.)
+  # 2) TÍTULO NO MEIO — idêntico à tipografia do Mushroom vertical
   # -------------------------------------------------------------
   - type: state-label
     entity: sensor.caixa_d_agua_dispositivo
     style:
-      top: 18%
+      top: 66%
       left: 50%
       transform: translate(-50%, -50%)
-      font-weight: "600"
+      font-weight: "500"
       font-size: 14px
+      line-height: 20px
       pointer-events: none
       color: var(--primary-text-color)
       width: 92%
       text-align: center
 
+  # -------------------------------------------------------------
+  # 3) STATUS EM BAIXO — idêntico ao subtítulo do Mushroom vertical
+  # -------------------------------------------------------------
   - type: state-label
     entity: sensor.caixa_d_agua_status
     style:
-      top: 32%
+      top: 84%
       left: 50%
       transform: translate(-50%, -50%)
       font-size: 12px
-      opacity: 0.7
+      font-weight: "400"
+      line-height: 16px
       pointer-events: none
       color: var(--secondary-text-color)
       width: 92%
       text-align: center
 
   # -------------------------------------------------------------
-  # 3) BOTÃO REDONDO CENTRAL — espelha o botão físico da cozinha.
-  #    ATENÇÃO: a 1ª versão usava "state-badge", que na prática ignora
-  #    tap_action/hold_action e sempre abre o "mais informações" da
-  #    entidade (confirmado empiricamente: ao tocar, abriu o more-info
-  #    do light em vez de chamar os botões). Trocado para "state-icon",
-  #    que aceita tap_action/hold_action de verdade e também colore o
-  #    ícone pelo estado/rgb_color da entidade (state_color, default
-  #    true) — só que não vem com o fundo circular preenchido do
-  #    state-badge, por isso o "background"/"border-radius: 50%" abaixo
-  #    são manuais (CSS simples, isso é nativo do style: do picture-
-  #    elements, não precisa de card-mod).
-  #    Por ser o ÚLTIMO elemento da lista, fica por CIMA do fundo e
-  #    intercepta o clique só na própria área (64x64px).
+  # 4) BOTÃO REDONDO NO TOPO — círculo suave e ícone centralizado
   # -------------------------------------------------------------
   - type: state-icon
     entity: light.caixa_d_agua_led_botao_cozinha
@@ -141,9 +131,9 @@ elements:
       target:
         entity_id: button.caixa_d_agua_clique_longo_modo_pausa
     style:
-      top: 74%
+      top: 30%
       left: 50%
-      "--mdc-icon-size": 22px
+      "--mdc-icon-size": 20px
       width: 42px
       height: 42px
       border-radius: 50%
