@@ -55,6 +55,11 @@ substitutions:
   pino_grade_secundaria: GPIO7   # 2 microswitches em série — grade secundária
   pino_porta_cozinha: GPIO8      # 1 microswitch — porta de madeira da cozinha
 
+  # Porta com teclado + 2× FX1500 (pacote porta.yaml).
+  porta_pin_rele: GPIO11         # base do 2N3904 -> IN do HW-307 (ativo em LOW)
+  porta_pin_teclado: GPIO12      # LK NO do teclado (via 1k + 100nF)
+  porta_pin_trancada: GPIO13     # 2 microswitches do batente em série
+
   # ------------- CALIBRAÇÃO (ajustar na instalação) -------------
   # Matriz de boias SUPERVISIONADA (laço com resistor de fim de linha):
   #   - Pull-up de 4.7kΩ do nó ADC para o 3V3 DO PRÓPRIO ESP32 (no quadro).
@@ -141,6 +146,10 @@ substitutions:
   fantasma_grace_ms: "10000"     # ms de tolerância após desligar (cauda de leitura do PZEM)
   nivel_leituras_estaveis: "4"   # histerese: leituras consecutivas (1s cada) para
                                  # aceitar mudança de nível (anti-marola/anti-ruído)
+
+# Porta (teclado + fechaduras): lógica 100% local, ver porta.yaml.
+packages:
+  porta: !include porta.yaml
 
 esphome:
   name: caixa-dagua

@@ -1,0 +1,105 @@
+# ─────────────────────────────────────────────────────────────
+# Pacote ESPHome: porta (teclado Asia-Teco SF2EM/MF-W + 2× Intelbras FX1500)
+# Roda no mesmo ESP32-S3 da caixa d'água.
+#
+# Uso no YAML principal:
+#   substitutions:
+#     porta_pin_rele: GPIO11       # ajuste aos pinos livres
+#     porta_pin_teclado: GPIO12
+#     porta_pin_trancada: GPIO13
+#   packages:
+#     porta: !include porta.yaml
+#
+# As substitutions do arquivo principal têm prioridade sobre as daqui.
+# ─────────────────────────────────────────────────────────────
+
+substitutions:
+  # GPIO4/5/6 já são das boias, do botão e da grade principal neste ESP.
+  porta_pin_rele: GPIO11       # base do 2N3904 (via 1k, 10k base→GND)
+  porta_pin_teclado: GPIO12    # LK NO do teclado (via 1k + 100 nF), LK COM no GND
+  porta_pin_trancada: GPIO13   # 2 micro switches do batente em série (C+NO) até o GND
+  # O pulso é ajustado pelo HA ("Porta - duração do pulso"), para testar
+  # valores menores sem regravar. Teto rígido de 1000 ms no lambda abaixo:
+  # Intelbras: acionamento máximo da FX1500 = 1 s.
+  porta_pulso_inicial: "700"   # ms
+  porta_descanso: 3s           # intervalo mínimo entre pulsos (bobina esfria)
+
+# A porta precisa abrir pelo teclado mesmo sem Wi-Fi/HA.
+# Sem isto, o ESPHome reinicia o ESP após 15 min sem conexão.
+wifi:
+  reboot_timeout: 0s
+api:
+  reboot_timeout: 0s
+
+switch:
+  - platform: gpio
+    id: porta_rele
+    pin: ${porta_pin_rele}
+    internal: true             # não exposto ao HA: só o script aciona
+    restore_mode: ALWAYS_OFF
+
+script:
+  # Único caminho que energiza as fechaduras.
+  # mode: single → disparos durante o pulso ou o descanso são ignorados.
+  - id: porta_pulso
+    mode: single
+    then:
+      - switch.turn_on: porta_rele
+      - delay: !lambda |-
+          float ms = id(porta_pulso_ms).state;
+          if (isnan(ms)) ms = ${porta_pulso_inicial};
+          return (uint32_t) clamp(ms, 100.0f, 1000.0f);
+      - switch.turn_off: porta_rele
+      - delay: ${porta_descanso}
+
+binary_sensor:
+  # Contato seco do teclado (fecha ~2 s quando libera um acesso).
+  - platform: gpio
+    id: porta_teclado
+    name: "Porta - acesso pelo teclado"
+    pin:
+      number: ${porta_pin_teclado}
+      mode: INPUT_PULLUP
+      inverted: true
+    filters:
+      - delayed_on: 30ms
+    on_press:
+      - script.execute: porta_pulso
+
+  # Linguetas no batente. Fechado (LOW) = as duas travadas.
+  # device_class lock: ON = destrancada, OFF = trancada.
+  # Fio rompido ou switch solto aparece como "destrancada" (falha segura).
+  - platform: gpio
+    id: porta_trancada
+    name: "Porta"
+    device_class: lock
+    pin:
+      number: ${porta_pin_trancada}
+      mode: INPUT_PULLUP
+      inverted: false
+    filters:
+      - delayed_on_off: 50ms
+
+button:
+  - platform: template
+    name: "Porta - abrir"
+    icon: mdi:door-open
+    on_press:
+      - script.execute: porta_pulso
+
+number:
+  # Duração do pulso nas fechaduras. Para achar o mínimo que ainda destrava
+  # as duas FX1500 com folga, desça de 50 em 50 ms e depois volte uns 100 ms.
+  - platform: template
+    id: porta_pulso_ms
+    name: "Porta - duração do pulso"
+    icon: mdi:timer-lock-open-outline
+    entity_category: config
+    unit_of_measurement: ms
+    min_value: 100
+    max_value: 1000
+    step: 50
+    mode: box
+    optimistic: true
+    restore_value: true
+    initial_value: ${porta_pulso_inicial}
