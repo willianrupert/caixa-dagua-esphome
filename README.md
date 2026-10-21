@@ -22,6 +22,7 @@ Um único botão de inox na cozinha, com LED RGB, comanda e reporta tudo. A lóg
 - **Histerese anti-marola:** ondulação da água não causa oscilação de estado nem desgaste da flash
 - **Botão digital no Home Assistant:** réplica fiel do botão físico — mesmas cores, toque = clique curto, segurar = clique longo
 - **Zero solda:** trilho DIN, bornes de parafuso e módulos prontos
+- **Módulo extra — Grade do Quintal:** o mesmo ESP aciona 2 fechaduras Intelbras FX1500 a partir de um teclado de acesso, com pulso curto e limitado por firmware
 
 ## 🗺️ Máquina de Estados
 
@@ -132,6 +133,36 @@ O dispositivo integra via API nativa do ESPHome. No dashboard, um **botão digit
 
 As métricas de debug (tensão das boias, corrente, potência, sinal Wi-Fi…) ficam **ocultas** no registro de entidades — invisíveis no dia a dia, acessíveis na página do dispositivo quando precisar.
 
+## 🚪 Grade do Quintal (módulo extra)
+
+Pacote ESPHome separado ([`porta.yaml`](porta.yaml)), incluído no firmware principal. O teclado de acesso Asia-Teco SF2EM/MF-W **não aciona as fechaduras direto**: o contato seco dele (fecha ~2 s) é só uma entrada do ESP, que gera o pulso nas duas **Intelbras FX1500** em paralelo.
+
+O motivo é a especificação: a FX1500 aceita no máximo **1 s** de acionamento, e o teclado não desce abaixo de 2 s.
+
+- **Pulso ajustável pelo HA** (100–1000 ms, teto rígido de 1 s no firmware). Na instalação real, 100 ms já destravou as duas; ficou em **250 ms** pela folga.
+- **3 s de descanso** entre pulsos: acessos em sequência não mantêm a bobina energizada
+- **Funciona sem Wi-Fi/HA** — a lógica é local, como o resto do sistema. Plano B: a chave mecânica da FX1500
+- **Relé fora do HA** (`internal: true`): nenhuma automação consegue deixar as fechaduras ligadas
+
+```
+GPIO11 ──[1kΩ]──┬── B   2N3904        HW-307 (relé 12 V, ativo em LOW)
+                │       C ─────────── IN
+             [10kΩ]                   NO ──► + das 2× FX1500 (1N4007 em antiparalelo)
+                │                     COM ◄─ +12 V
+GND ESP ────────┴── E ─────────────── − da fonte 12 V (GNDs unidos, positivos separados)
+
+LK NO do teclado ──[1kΩ]──┬── GPIO12      LK COM ── GND
+                          └── 100 nF ── GND
+```
+
+| Pino | Função |
+|---|---|
+| GPIO11 | Base do 2N3904 → IN do relé |
+| GPIO12 | Contato LK NO do teclado (pull-up interno) |
+| GPIO13 | Micro switches do batente (opcional — "trancada") |
+
+No dashboard, o card da grade tem **duas zonas de clique** (Mushroom v5, `icon_tap_action`): o **ícone** abre com confirmação, o **resto do card** leva à tela de ajuste do pulso e ao histórico de aberturas. Ver [`home-assistant-card-grade-quintal.yaml`](home-assistant-card-grade-quintal.yaml).
+
 ## 🚀 Instalação
 
 ```bash
@@ -167,6 +198,8 @@ esphome run caixa-dagua.yaml --device caixa-dagua.local
 | Arquivo | Conteúdo |
 |---|---|
 | [`caixa-dagua.yaml`](caixa-dagua.yaml) | Firmware ESPHome completo — FSM, proteções, LED, HA |
+| [`porta.yaml`](porta.yaml) | Pacote da Grade do Quintal — teclado + 2× FX1500 |
+| [`home-assistant-card-grade-quintal.yaml`](home-assistant-card-grade-quintal.yaml) | Card e tela de ajuste da grade no HA |
 | [`MEMORIAL-DESCRITIVO.md`](MEMORIAL-DESCRITIVO.md) | Engenharia: FSM detalhada, BOM, divisores, regras |
 | [`secrets.example.yaml`](secrets.example.yaml) | Modelo de credenciais (o real fica fora do Git) |
 
