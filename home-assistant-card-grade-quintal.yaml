@@ -5,27 +5,55 @@
 #  5º card da seção "Portaria" (views[0].sections[9]), depois do Backup.
 #  Este arquivo é o registro do que está rodando.
 #
-#  Mesmo estilo dos cards vizinhos (Portão, P1, P2), mas só com o botão de
-#  abrir: sem feedback de trancada/destrancada. Aciona o mesmo script do
-#  teclado (porta.yaml): pulso nas 2× FX1500 limitado a 1 s, com 3 s de
-#  descanso entre aberturas.
-#
-#  O button.* só existe depois do próximo flash do ESP32.
+#  Mesmo estilo dos cards vizinhos (Portão, P1, P2), sem feedback de
+#  trancada/destrancada. Duas zonas de clique, nativas do Mushroom v5
+#  (icon_tap_action), sem picture-elements:
+#    - ÍCONE no meio: abre a grade (com confirmação). Aciona o mesmo
+#      script do teclado (porta.yaml): pulso nas 2× FX1500 limitado a
+#      1 s, com 3 s de descanso entre aberturas.
+#    - RESTO do card: navega para a view de ajuste (2º documento abaixo).
 # =====================================================================
 type: custom:mushroom-template-card
 entity: button.caixa_d_agua_grade_do_quintal_abrir
 primary: Grade do Quintal
-secondary: Toque para abrir
+secondary: Toque no ícone para abrir
 icon: mdi:gate
 icon_color: grey
-tap_action:
+icon_tap_action:
   action: call-service
   service: button.press
   target:
     entity_id: button.caixa_d_agua_grade_do_quintal_abrir
   confirmation:
     text: Abrir a grade do quintal agora?
+tap_action:
+  action: navigate
+  navigation_path: /casa-rlight/grade-quintal-config
 layout: vertical
 grid_options:
   columns: 6
   rows: 2
+
+---
+# =====================================================================
+#  View de ajuste — "casa-rlight" dashboard, path grade-quintal-config
+#  JÁ APLICADA AO VIVO em 2026-10-20 (subview, igual à caixa-dagua-config).
+# =====================================================================
+title: Config. Grade do Quintal
+path: grade-quintal-config
+subview: true
+type: masonry
+cards:
+  - type: entities
+    title: Fechaduras (2× FX1500)
+    entities:
+      - entity: number.caixa_d_agua_grade_do_quintal_duracao_do_pulso
+        name: Duração do pulso (máx. 1000 ms)
+      - entity: button.caixa_d_agua_grade_do_quintal_abrir
+        name: Abrir agora (sem confirmação)
+  - type: logbook
+    title: Aberturas
+    hours_to_show: 72
+    entities:
+      - binary_sensor.caixa_d_agua_grade_do_quintal_acesso_pelo_teclado
+      - button.caixa_d_agua_grade_do_quintal_abrir
