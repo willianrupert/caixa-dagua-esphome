@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────
-# Pacote ESPHome: porta (teclado Asia-Teco SF2EM/MF-W + 2× Intelbras FX1500)
+# Pacote ESPHome: grade do quintal (teclado Asia-Teco SF2EM/MF-W + 2× Intelbras FX1500)
 # Roda no mesmo ESP32-S3 da caixa d'água.
 #
 # Uso no YAML principal:
@@ -18,10 +18,10 @@ substitutions:
   porta_pin_rele: GPIO11       # base do 2N3904 (via 1k, 10k base→GND)
   porta_pin_teclado: GPIO12    # LK NO do teclado (via 1k + 100 nF), LK COM no GND
   porta_pin_trancada: GPIO13   # 2 micro switches do batente em série (C+NO) até o GND
-  # O pulso é ajustado pelo HA ("Porta - duração do pulso"), para testar
+  # O pulso é ajustado pelo HA ("Grade do Quintal - duração do pulso"), para testar
   # valores menores sem regravar. Teto rígido de 1000 ms no lambda abaixo:
   # Intelbras: acionamento máximo da FX1500 = 1 s.
-  porta_pulso_inicial: "700"   # ms
+  porta_pulso_inicial: "400"   # ms
   porta_descanso: 3s           # intervalo mínimo entre pulsos (bobina esfria)
 
 # A porta precisa abrir pelo teclado mesmo sem Wi-Fi/HA.
@@ -56,7 +56,7 @@ binary_sensor:
   # Contato seco do teclado (fecha ~2 s quando libera um acesso).
   - platform: gpio
     id: porta_teclado
-    name: "Porta - acesso pelo teclado"
+    name: "Grade do Quintal - acesso pelo teclado"
     pin:
       number: ${porta_pin_teclado}
       mode: INPUT_PULLUP
@@ -71,7 +71,7 @@ binary_sensor:
   # Fio rompido ou switch solto aparece como "destrancada" (falha segura).
   - platform: gpio
     id: porta_trancada
-    name: "Porta"
+    name: "Grade do Quintal"
     device_class: lock
     pin:
       number: ${porta_pin_trancada}
@@ -82,7 +82,7 @@ binary_sensor:
 
 button:
   - platform: template
-    name: "Porta - abrir"
+    name: "Grade do Quintal - abrir"
     icon: mdi:door-open
     on_press:
       - script.execute: porta_pulso
@@ -92,9 +92,8 @@ number:
   # as duas FX1500 com folga, desça de 50 em 50 ms e depois volte uns 100 ms.
   - platform: template
     id: porta_pulso_ms
-    name: "Porta - duração do pulso"
+    name: "Grade do Quintal - duração do pulso"
     icon: mdi:timer-lock-open-outline
-    entity_category: config
     unit_of_measurement: ms
     min_value: 100
     max_value: 1000

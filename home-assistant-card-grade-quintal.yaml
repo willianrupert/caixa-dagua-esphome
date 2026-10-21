@@ -1,0 +1,31 @@
+# =====================================================================
+#  Grade do Quintal — card do dashboard "Casa RLIGHT"
+#
+#  JÁ APLICADO AO VIVO (WS lovelace/config/save) em 2026-10-20, como
+#  5º card da seção "Portaria" (views[0].sections[9]), depois do Backup.
+#  Este arquivo é o registro do que está rodando.
+#
+#  Mesmo estilo dos cards vizinhos (Portão, P1, P2), mas só com o botão de
+#  abrir: sem feedback de trancada/destrancada. Aciona o mesmo script do
+#  teclado (porta.yaml): pulso nas 2× FX1500 limitado a 1 s, com 3 s de
+#  descanso entre aberturas.
+#
+#  O button.* só existe depois do próximo flash do ESP32.
+# =====================================================================
+type: custom:mushroom-template-card
+entity: button.caixa_d_agua_grade_do_quintal_abrir
+primary: Grade do Quintal
+secondary: Toque para abrir
+icon: mdi:gate
+icon_color: grey
+tap_action:
+  action: call-service
+  service: button.press
+  target:
+    entity_id: button.caixa_d_agua_grade_do_quintal_abrir
+  confirmation:
+    text: Abrir a grade do quintal agora?
+layout: vertical
+grid_options:
+  columns: 6
+  rows: 2
