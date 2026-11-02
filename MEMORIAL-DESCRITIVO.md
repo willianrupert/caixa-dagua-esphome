@@ -53,7 +53,7 @@ Se o sistema salvasse "bomba ligada" e religasse o relé direto no boot, haveria
 | E2 | Recalque (Crítico) | Enchendo com nível crítico. LED Roxo/Pink. |
 | E3 | Recalque (Intermediário/Manual) | Enchendo em nível intermediário ou por comando manual. LED Azul. |
 | E4 | Finalização (Sucesso) | Caixa encheu. LED Verde por 1 minuto. |
-| E5 | Falha Contator (Corrente Fantasma) | Corrente detectada com relé desligado = contatos soldados **ou chave de bypass em MANUAL** (ver 4.2.1). LED Branco piscando. Requer clique curto (e desligar o disjuntor, se não for o bypass). |
+| E5 | Falha Contator (Corrente Fantasma) | Corrente detectada com relé desligado = contatos soldados **ou chave de bypass em MANUAL** (ver 4.2.1). LED Branco piscando. Sai com clique curto **ou sozinha após 5 min de leituras válidas sem potência** (desligue o disjuntor, se não for o bypass). |
 | E6 | Falha Corrente Alta | Rotor preso. LED Vermelho piscando. Requer clique curto para reset. |
 | E7 | Falha Corrente Baixa | Bomba sem água (cisterna seca). LED Azul piscando. Requer clique curto para reset. |
 | E8 | **Modo Pausa** | Manutenção soberana. LED Amarelo **sólido** (manual) ou **piscando** (automática: inching/sensor). |
@@ -259,7 +259,7 @@ próxima geração de sensores de nível.
 - **Blanking time de 5 s** na partida (cegueira de arranque) antes de validar corrente.
 - **Corrente alta** → rotor preso → **E6**.
 - **Corrente baixa** → bomba a seco / cisterna vazia → **E7**.
-- **Corrente fantasma** (relé desligado + corrente > 0.5 A por mais de 10 s) → contatos do relé/contator **soldados** → **E5** (branco piscando). O software não consegue cortar um defeito mecânico — o alarme existe para o usuário **desligar o disjuntor**. Vale em **qualquer** estado, inclusive durante a Pausa (é exatamente quando alguém pode estar com a mão na caixa!).
+- **Potência fantasma** (relé desligado + potência > 30 W em **3 leituras seguidas**, passados 10 s do desligamento) → contatos do relé/contator **soldados** → **E5** (branco piscando). O software não consegue cortar um defeito mecânico — o alarme existe para o usuário **desligar o disjuntor**. Vale em **qualquer** estado, inclusive durante a Pausa (é exatamente quando alguém pode estar com a mão na caixa!).
 
 #### 4.2.1 A chave de bypass produz a mesma assinatura — e alarma junto
 
@@ -289,7 +289,29 @@ quando pode ser o operador.
 ele existe, portanto o único teste fiel — e de quebra não gera alarme
 nenhum, porque não há firmware rodando. Testar com o sistema vivo dispara
 E5 em segundos, e o clique curto não adianta enquanto a corrente persistir:
-ele limpa, e o alarme volta.
+ele limpa, e o alarme volta. Ao voltar a chave para AUTO, a E5 sai sozinha
+depois de 5 min sem potência (ver 4.2.2).
+
+#### 4.2.2 Leituras corrompidas do PZEM e saída automática da E5
+
+Em 2026-11-02 o ESP32 passou a ser alimentado pela linha do gerador solar
+(para a Grade do Quintal abrir na falta de energia). Na volta da energia, a
+1ª leitura do PZEM após o boot chegou corrompida — **3818 V, 4,1 MA,
+124 MW** — e uma leitura só bastou para disparar E5, exigindo clique.
+
+Três defesas, em camadas:
+
+1. **Leitura impossível é descartada:** fora de 80–280 V ou acima de 3 kW
+   (bomba de 1/4 HP num PZEM de 10 A) não é física, é quadro ruim. Não
+   toca na FSM — vale também para E6/E7.
+2. **E5 exige 3 leituras fantasma seguidas** (~9 s): um quadro isolado
+   não alarma.
+3. **E5 sai sozinha** após 5 min de leituras **válidas** sem potência
+   fantasma. E5 é só alarme (o relé já está desligado), então limpar não
+   liga nada que não ligaria pelo caminho normal (E0 → boias → E1). Um
+   contator soldado de verdade nunca sai, porque a potência não some; se o
+   disjuntor for desligado e religado com o defeito, E5 volta em ~9 s.
+   Sem leituras (PZEM sem energia) o relógio não anda: a E5 fica.
 
 ### 4.3 Sensores de porta (microswitches) — fail-safe por polaridade e por série, não por laço EOL
 
@@ -440,7 +462,7 @@ canal. Só vale se a medição de brilho reprovar.
 
 1. **Nunca religar a bomba direto no boot** — todo boot passa pela E9 (Boot Seguro) com reteste de boias e blanking de 5 s no PZEM.
 2. **Pausa é soberana** — clique longo desliga o motor imediatamente de qualquer estado e trava o sistema até novo clique longo.
-3. **Falhas exigem reconhecimento humano** — E6/E7 só destravam com clique curto, inclusive após apagão.
+3. **Falhas exigem reconhecimento humano** — E6/E7 só destravam com clique curto, inclusive após apagão. E5 também aceita o clique, mas sai sozinha após 5 min sem potência (4.2.2).
 4. **Flash só grava em mudança de estado** — jamais gravação periódica (proteção contra desgaste).
 5. **Modo Pausa ignora boias** — nenhuma variação de nível liga a bomba durante manutenção.
 6. **Inching de 15 minutos** — a bomba nunca fica ligada mais de 15 min contínuos (calibrado com folga sobre os ~12m30s reais); se estourar (boia superior quebrada?), entra em Pausa Automática (amarelo piscando) e exige clique longo para destravar.

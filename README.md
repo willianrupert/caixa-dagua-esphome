@@ -61,7 +61,7 @@ stateDiagram-v2
     E3 --> E7: subcorrente
     E6 --> E0: clique curto (reset)
     E7 --> E0: clique curto (reset)
-    E5 --> E0: clique curto (reset)
+    E5 --> E0: clique curto ou 5 min sem potência
 
     E2 --> E8: inching 15 min ⏱️
     E3 --> E8: inching 15 min ⏱️
@@ -89,12 +89,12 @@ stateDiagram-v2
 
 1. **Nunca religa a bomba direto no boot** — todo boot passa pela rotina E9: relê boias, pré-partida e 5 s de *blanking* no monitor de corrente.
 2. **Pausa é soberana** — clique longo desliga o motor imediatamente de qualquer estado.
-3. **Falhas exigem reconhecimento humano** — E5/E6/E7 só destravam com clique curto, mesmo após apagão.
+3. **Falhas exigem reconhecimento humano** — E6/E7 só destravam com clique curto, mesmo após apagão. E5 é só alarme: sai sozinha após 5 min de leituras válidas sem potência.
 4. **Flash grava só em mudança de estado** — durabilidade de décadas.
 5. **Modo Pausa ignora as boias** — nada liga a bomba durante manutenção.
 6. **Inching de 15 minutos** — limite físico de funcionamento contínuo (folgado sobre os ~12m30s reais).
 7. **Nunca reinicia por falta de rede** — `reboot_timeout: 0s` no Wi-Fi e na API.
-8. **Corrente fantasma alarma sempre** — contator soldado é detectado em qualquer estado.
+8. **Corrente fantasma alarma sempre** — contator soldado é detectado em qualquer estado (3 leituras seguidas; leituras impossíveis do PZEM são descartadas).
 9. **Sensor de nível supervisionado** — o sistema nunca opera "no escuro".
 
 ## 🔧 Hardware (resumo)

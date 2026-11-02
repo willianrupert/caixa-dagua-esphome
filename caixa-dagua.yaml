@@ -144,6 +144,8 @@ substitutions:
 
   corrente_fantasma: "0.5"       # A — corrente com relé DESLIGADO = contator soldado (E5)
   fantasma_grace_ms: "10000"     # ms de tolerância após desligar (cauda de leitura do PZEM)
+  fantasma_leituras: "3"         # leituras fantasma SEGUIDAS (3s cada) para entrar em E5
+  e5_auto_reset_ms: "300000"     # E5 sai sozinha após 5 min de leituras válidas sem potência
   nivel_leituras_estaveis: "4"   # histerese: leituras consecutivas (1s cada) para
                                  # aceitar mudança de nível (anti-marola/anti-ruído)
 
@@ -259,6 +261,18 @@ globals:
 
   # millis() do momento em que o relé desligou (tolerância da corrente fantasma)
   - id: pump_stopped_at
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
+
+  # E5: leituras fantasma consecutivas (uma leitura isolada não alarma)
+  - id: fantasma_contagem
+    type: int
+    restore_value: false
+    initial_value: '0'
+
+  # E5: millis() da 1ª leitura válida sem potência fantasma (0 = não contando)
+  - id: e5_limpo_desde
     type: uint32_t
     restore_value: false
     initial_value: '0'
@@ -797,7 +811,7 @@ script:
             case 4:  // já em sucesso: pisca pra confirmar o clique, sem dispensar o verde
               id(pulso_feedback_sucesso).execute();
               break;
-            case 5:  // reconhece falha de contator (se a corrente persistir, E5 volta em ~3s)
+            case 5:  // reconhece falha de contator (se a potência persistir, E5 volta em ~9s)
             case 6:
             case 7:  // reconhece a falha; boias reavaliam e religam com E1+blanking
               ESP_LOGI("fsm", "Falha reconhecida pelo usuario");
@@ -1017,6 +1031,7 @@ sensor:
     update_interval: 3s
     voltage:
       name: "Tensão da Rede"
+      id: tensao_rede
       accuracy_decimals: 1
     current:
       name: "Corrente da Bomba"
@@ -1047,6 +1062,18 @@ sensor:
               }
           - lambda: |-
               if (std::isnan(x)) return;
+
+              // ----- LEITURA IMPOSSÍVEL: quadro corrompido do PZEM -----
+              // Visto em 2026-11-02, na volta da energia com o ESP no gerador
+              // solar: a 1ª leitura após o boot veio com 3818 V / 4,1 MA /
+              // 124 MW e disparou E5 sozinha. A bomba é 1/4 HP num PZEM de
+              // 10 A: nada acima de 3 kW ou fora de 80–280 V é real.
+              // Descarta sem tocar na FSM.
+              float v = id(tensao_rede).state;
+              if (x > 3000.0f || std::isnan(v) || v < 80.0f || v > 280.0f) {
+                ESP_LOGW("pzem", "Leitura descartada (implausivel): %.1f V / %.1f W", v, x);
+                return;
+              }
               int s = id(fsm_state);
 
               // ----- POTÊNCIA FANTASMA: contator soldado (E5) -----
@@ -1054,13 +1081,39 @@ sensor:
               // os contatos do relé/contator soldaram fechados. O software
               // não consegue cortar (defeito mecânico) — alarma para o
               // usuário desligar o disjuntor. Vale em QUALQUER estado.
-              if (!id(rele_bomba).state && s != 5 &&
-                  x > 30.0f &&
-                  (millis() - id(pump_stopped_at)) > ${fantasma_grace_ms}) {
-                ESP_LOGE("fsm", "POTENCIA FANTASMA %.1f W com rele desligado - contator soldado OU chave em MANUAL. Se nao for o bypass, desligue o disjuntor!", x);
-                id(goto_state).execute(5);
+              bool fantasma = !id(rele_bomba).state && x > 30.0f &&
+                  (millis() - id(pump_stopped_at)) > ${fantasma_grace_ms};
+
+              if (s == 5) {
+                // Auto-recuperação: E5 só alarma, o relé já está desligado.
+                // Se as leituras VÁLIDAS mostram motor parado por 5 min, o
+                // alarme era transitório e volta a E0 sozinho — a volta da
+                // energia não exige clique. Contator soldado de verdade nunca
+                // sai daqui (a potência não some); se o disjuntor for
+                // desligado e religado com o defeito, E5 volta em ~9s.
+                if (fantasma) { id(e5_limpo_desde) = 0; return; }
+                if (id(e5_limpo_desde) == 0) {
+                  id(e5_limpo_desde) = millis() | 1;  // 0 é "não contando"
+                } else if (millis() - id(e5_limpo_desde) >= ${e5_auto_reset_ms}) {
+                  ESP_LOGI("fsm", "E5 limpa sozinha: %u s sem potencia fantasma", ${e5_auto_reset_ms} / 1000);
+                  id(e5_limpo_desde) = 0;
+                  id(goto_state).execute(0);
+                  id(ocorrencia_texto).publish_state("E5 limpa sozinha: 5 min sem potencia com rele desligado");
+                }
                 return;
               }
+
+              if (fantasma) {
+                // Exige leituras seguidas: um quadro ruim isolado não alarma.
+                if (++id(fantasma_contagem) >= ${fantasma_leituras}) {
+                  id(fantasma_contagem) = 0;
+                  id(e5_limpo_desde) = 0;
+                  ESP_LOGE("fsm", "POTENCIA FANTASMA %.1f W com rele desligado - contator soldado OU chave em MANUAL. Se nao for o bypass, desligue o disjuntor!", x);
+                  id(goto_state).execute(5);
+                }
+                return;
+              }
+              id(fantasma_contagem) = 0;
 
               if (s != 2 && s != 3) return;          // demais checks: só com bomba ligada
               if (!id(rele_bomba).state) return;
